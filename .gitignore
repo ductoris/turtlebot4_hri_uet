@@ -1,0 +1,19 @@
+# Build and cache artifacts
+build/
+install/
+log/
+__pycache__/
+*.pyc
+
+# Excluded per user request
+image/
+image
+images/
+docs/images/
+report/
+
+# Media binaries
+*.png
+*.jpg
+*.jpeg
+*.pdf
