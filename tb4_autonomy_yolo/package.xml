@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tb4_autonomy_yolo</name>
+  <version>0.1.0</version>
+  <description>TurtleBot 4: AMCL localization, Nav2 waypoint navigation and YOLOv8 object detection (Lab 05)</description>
+  <maintainer email="student@example.com">student</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>nav2_simple_commander</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>turtlebot4_ignition_bringup</exec_depend>
+  <exec_depend>turtlebot4_navigation</exec_depend>
+  <exec_depend>turtlebot4_viz</exec_depend>
+  <!-- ultralytics KHÔNG có trong rosdep: cài bằng pip (xem README) -->
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
