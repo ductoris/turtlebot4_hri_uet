@@ -1,19 +1,21 @@
-# Build and cache artifacts
+# Ignore report and documentation folders
+report/
+**/report/
+docs/
+**/docs/
+
+# Python cache and byte-compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# ROS / Colcon build artifacts
 build/
 install/
 log/
-__pycache__/
-*.pyc
 
-# Excluded per user request
-image/
-image
-images/
-docs/images/
-report/
-
-# Media binaries
-*.png
-*.jpg
-*.jpeg
-*.pdf
+# OS / editor artifacts
+.DS_Store
+*.swp
+*~
