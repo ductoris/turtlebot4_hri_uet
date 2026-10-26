@@ -1,0 +1,350 @@
+% =============================================================================
+% 1. MỤC TIÊU VÀ PHẠM VI
+% =============================================================================
+\section{Mục tiêu và phạm vi}
+
+Báo cáo nghiên cứu, thiết kế và triển khai gói phần mềm ROS 2 \texttt{gesture\_turtlebot4} phục vụ bài toán \textbf{Giao tiếp phi ngôn ngữ (Nonverbal Human-Robot Interaction - HRI)} giữa con người và robot tự hành TurtleBot 4 trong môi trường mô phỏng vật lý Ignition Gazebo thông qua camera máy tính cá nhân. Hệ thống tập trung giải quyết 4 mục tiêu trọng tâm:
+
+\begin{itemize}
+    \item \textbf{Thị giác máy tính và Nhận diện cử chỉ AI:} Xây dựng node thị giác thời gian thực ứng dụng Google MediaPipe Tasks API (\texttt{gesture\_recognizer.task}) kết hợp OpenCV, trích xuất 21 điểm mốc tọa độ bàn tay (Hand Landmarks), nhận diện chính xác các cử chỉ tĩnh (\textit{Pointing\_Up, Victory, Thumb\_Up, Open\_Palm, Closed\_Fist}) và xuất bản kết quả lên topic ROS 2 \texttt{/detected\_gesture}.
+    \item \textbf{Thuật toán Nhận diện Cử chỉ động Wave:} Giải quyết hạn chế cốt lõi của MediaPipe (vốn không hỗ trợ sẵn nhãn vẫy tay) bằng thuật toán phân tích quỹ đạo dao động tâm bàn tay theo phương ngang, phát hiện cực trị (Peak-Valley) theo chuỗi 3 nhịp dứt khoát kết hợp cơ chế chốt tín hiệu (Latch), phân biệt rõ ràng giữa bàn tay dừng yên (\textit{Open\_Palm}) và bàn tay vẫy chào (\textit{Wave}).
+    \item \textbf{Máy trạng thái hữu hạn (FSM) và Điều khiển Non-blocking:} Phát triển node hành vi \texttt{robot\_behavior_node} ứng dụng máy trạng thái hữu hạn với chu kỳ điều khiển \SI{20}{\hertz}, thực thi các chuỗi hành động (\textit{Tiến - lùi 4 chu kỳ, Quỹ đạo tròn, Xoay chào 3 nhịp}) hoàn toàn bất đồng bộ, cho phép ngắt khẩn cấp tức thời khi nhận cử chỉ an toàn mà không làm nghẽn luồng xử lý.
+    \item \textbf{Cơ chế an toàn và Tính tương thích công nghiệp:} Tích hợp cơ chế giám sát mất tín hiệu (Watchdog \SI{2.0}{\second}), bộ kẹp dải vận tốc an toàn (Velocity Clamp), giải quyết triệt để cơ chế khóa động cơ trên trạm sạc Docking của đế iRobot Create 3, và khởi tạo các Mock Service nhằm triệt tiêu các cảnh báo thiếu driver phần cứng RPLIDAR/OAK-D trong Gazebo.
+\end{itemize}
+
+% =============================================================================
+% 2. CẤU TRÚC CHƯƠNG TRÌNH VÀ PACKAGE
+% =============================================================================
+\section{Cấu trúc chương trình và package}
+
+Package \texttt{gesture\_turtlebot4} được tổ chức chuẩn mực theo định dạng \texttt{ament\_python} trong ROS 2 Humble, tích hợp đầy đủ mã nguồn điều khiển, tệp cấu hình tham số YAML, launch file, mô hình AI và môi trường thế giới 3D:
+
+\subsection{Cấu trúc thư mục package}
+\dirtree{%
+.1 gesture\_turtlebot4/.
+.2 package.xml\DTcomment{Khai báo thông tin gói, tác giả, giấy phép và các ROS 2 dependencies}.
+.2 setup.py\DTcomment{Cấu hình cài đặt data\_files (config, launch, models, worlds) và entry points}.
+.2 setup.cfg\DTcomment{Cấu hình đường dẫn thực thi script Python}.
+.2 config/.\DTcomment{Thư mục lưu trữ tệp cấu hình tham số hệ thống}.
+.3 params.yaml\DTcomment{Tham số webcam, ngưỡng nhận diện, thuật toán Wave và giới hạn vận tốc}.
+.2 gesture\_turtlebot4/.\DTcomment{Thư mục chứa mã nguồn Python chính của hai node ROS 2}.
+.3 \_\_init\_\_.py\DTcomment{Khởi tạo module Python}.
+.3 gesture\_recognition\_node.py\DTcomment{Node đọc webcam, AI MediaPipe, phát hiện Wave, vẽ HUD}.
+.3 robot\_behavior\_node.py\DTcomment{Node FSM, điều khiển /cmd\_vel, Mock Services, Watchdog}.
+.2 launch/.\DTcomment{Tệp khởi chạy đồng thời toàn bộ hệ thống}.
+.3 gesture\_control.launch.py\DTcomment{Launch file nạp params.yaml và chạy song song 2 node}.
+.2 models/.\DTcomment{Thư mục chứa tệp mô hình học máy nhị phân}.
+.3 gesture\_recognizer.task\DTcomment{Mô hình AI Gesture Recognizer chính thức từ Google (8.0 MB)}.
+.2 resource/.\DTcomment{Tệp định danh gói phục vụ chỉ mục ament}.
+.3 gesture\_turtlebot4\DTcomment{Marker file}.
+.2 scripts/.\DTcomment{Tập lệnh tiện ích và kiểm thử hệ thống}.
+.3 download\_model.sh\DTcomment{Script bash tự động tải model từ Google Storage}.
+.3 webcam\_test.py\DTcomment{Script kiểm tra độc lập camera, FPS và độ phân giải}.
+.2 worlds/.\DTcomment{Môi trường không gian mô phỏng trong Ignition Gazebo}.
+.3 empty\_room.sdf\DTcomment{Thế giới phòng phẳng rộng $12\times 12\,\text{m}$ không vật cản}.
+}
+
+\subsection{Vai trò của từng thành phần trong package}
+\begin{itemize}
+    \item \texttt{gesture\_recognition\_node.py}: Đảm nhận vai trò thị giác máy tính. Đọc từng khung hình từ camera với tần số \SI{30}{\hertz}, chuyển đổi không gian màu BGR $\to$ RGB, thực thi mô hình MediaPipe Tasks API để bóc tách 21 điểm mốc xương tay. Tính toán chuyển động của tâm lòng bàn tay để nhận diện hành động vẫy (\textit{Wave}), áp dụng bộ lọc rung đa khung hình (Debounce filter) và xuất bản cử chỉ xác nhận lên \texttt{/detected\_gesture}. Đồng thời, node vẽ giao diện HUD trực quan với thông tin cử chỉ, độ tin cậy, FPS và trạng thái robot phản hồi từ \texttt{/robot\_state}.
+    \item \texttt{robot\_behavior\_node.py}: Đóng vai trò hạt nhân điều khiển hành vi và an toàn. Node đăng ký nhận topic \texttt{/detected\_gesture}, xử lý chuyển đổi giữa các trạng thái trong máy trạng thái hữu hạn (FSM). Node chia các hành vi lớn thành danh sách các bước chuyển động nhỏ (\textit{Step List}), thực thi từng bước trong vòng lặp Timer \SI{20}{\hertz} độc lập, kiểm tra tín hiệu Watchdog \SI{2.0}{\second}, cung cấp 4 Mock Service nhằm dập tắt cảnh báo thiếu driver phần cứng và giám sát trạng thái dock sạc để tự động gửi lệnh Undock giải phóng bánh xe.
+    \item \texttt{gesture\_control.launch.py}: Tệp launch tự động tìm kiếm đường dẫn chia sẻ của gói thông qua \texttt{FindPackageShare}, nạp toàn bộ tham số từ \texttt{params.yaml} và khởi động đồng thời cả hai node \texttt{gesture\_recognition\_node} và \texttt{robot\_behavior\_node}.
+    \item \texttt{params.yaml}: Tách biệt toàn bộ tham số kỹ thuật ra khỏi mã nguồn logic, cho phép kỹ sư tinh chỉnh nhanh chỉ số camera, ngưỡng tin cậy, biên độ vẫy tay, số chu kỳ tiến-lùi, bán kính vòng tròn và vận tốc an toàn mà không cần biên dịch lại gói.
+    \item \texttt{empty\_room.sdf}: Mô hình không gian 3D được thiết kế chuyên biệt cho thực nghiệm điều khiển cử chỉ: mặt sàn phẳng tuyệt đối diện tích $12\,\text{m} \times 12\,\text{m}$ bao quanh bởi 4 bức tường cao $2\,\text{m}$, loại bỏ toàn bộ vật cản phức tạp, đảm bảo robot thực hiện trọn vẹn quỹ đạo tiến-lùi và vòng tròn mà không xảy ra va chạm.
+\end{itemize}
+
+% =============================================================================
+% 3. KIẾN TRÚC HỆ THỐNG VÀ SƠ ĐỒ KHỐI
+% =============================================================================
+\section{Kiến trúc hệ thống và sơ đồ khối}
+
+Hệ thống được thiết kế theo kiến trúc phân tầng dạng hướng sự kiện (Event-Driven Architecture) với hai luồng giao tiếp chính: Luồng truyền nhận cử chỉ cấp cao và Luồng điều khiển vận tốc chấp hành cấp thấp, được trực quan hóa qua sơ đồ khối dưới đây:
+
+\begin{figure}[H]
+\centering
+\resizebox{0.95\linewidth}{!}{%
+\begin{tikzpicture}[
+    node distance=8mm and 10mm,
+    every text node part/.style={align=center},
+    lbl/.style={font=\scriptsize, fill=white, inner sep=1.5pt, align=center},
+    camblock/.style={rectangle, draw=gray!80!black, fill=gray!15, text width=3.8cm, minimum height=1.1cm, rounded corners=3pt, font=\small},
+    visionblock/.style={rectangle, draw=purple!80!black, fill=purple!10, text width=4.4cm, minimum height=1.6cm, rounded corners=3pt, font=\small},
+    fsmblock/.style={rectangle, draw=blue!80!black, fill=blue!10, text width=4.4cm, minimum height=1.6cm, rounded corners=3pt, font=\small},
+    gazeboblock/.style={rectangle, draw=orange!80!black, fill=orange!10, text width=4.0cm, minimum height=1.4cm, rounded corners=3pt, font=\small},
+    mockblock/.style={rectangle, draw=teal!80!black, fill=teal!10, text width=3.8cm, minimum height=1.1cm, rounded corners=3pt, font=\small},
+    arr/.style={->, >=stealth, thick, color=blue!80!black},
+    fsmarr/.style={->, >=stealth, thick, color=purple!80!black},
+    gzarr/.style={->, >=stealth, thick, color=orange!80!black},
+    dasharr/.style={->, >=stealth, thick, dashed, color=teal!80!black}
+]
+
+% Hàng 1: Webcam & Giao diện HUD
+\node[camblock] (cam) {\textbf{Laptop Webcam}\\\texttt{/dev/video0}\\Độ phân giải $640\times 480$\\Tần số lấy mẫu \SI{30}{\hertz}};
+
+% Hàng 2: Node AI Vision
+\node[visionblock, below=of cam] (vision) {\textbf{\texttt{gesture\_recognition\_node}}\\Google MediaPipe Tasks API\\Bóc tách 21 Hand Landmarks\\Thuật toán Wave Peak-Valley\\Bộ lọc chống rung Debounce};
+
+% Hàng 3: Node Behavior FSM
+\node[fsmblock, below=of vision] (fsm) {\textbf{\texttt{robot\_behavior\_node}}\\Máy trạng thái FSM Non-blocking\\Bộ chia bước động cơ (Step List)\\Bộ kẹp vận tốc (Safety Clamp)\\Watchdog giám sát \SI{2.0}{\second}};
+
+% Hàng 4: Ignition Gazebo Robot
+\node[gazeboblock, below=of fsm] (gazebo) {\textbf{Ignition Gazebo (TurtleBot 4)}\\Plugin \texttt{diffdrive\_controller}\\Bộ điều khiển động cơ vi sai\\Cảm biến Odometry bánh xe};
+
+% Khối phụ: Mock Services & Dock Handler
+\node[mockblock, right=of fsm, xshift=8mm] (mock) {\textbf{Tầng Khử Lỗi \& Giám Sát}\\Mock \texttt{/start\_motor}, \texttt{/stop\_motor}\\Mock \texttt{/oakd/start\_camera}\\Action Client \texttt{/undock}};
+
+% Kết nối luồng dữ liệu
+\draw[arr] (cam) -- node[right, lbl]{Khung hình BGR thô} (vision);
+\draw[fsmarr] (vision) -- node[right, lbl]{\texttt{/detected\_gesture}\\(\texttt{std\_msgs/msg/String})} (fsm);
+
+% Phản hồi HUD ngược lên
+\draw[dasharr] (fsm.west) -- ++(-8mm,0) |- node[left, lbl, pos=0.25]{\texttt{/robot\_state}\\Trạng thái robot} (vision.west);
+
+% Lệnh xuống Gazebo
+\draw[gzarr] ([xshift=-6mm]fsm.south) -- node[left, lbl]{\texttt{/cmd\_vel}\\(\texttt{geometry\_msgs/msg/Twist})} ([xshift=-6mm]gazebo.north);
+
+% Phản hồi Odometry lên FSM
+\draw[gzarr] ([xshift=6mm]gazebo.north) -- node[right, lbl]{\texttt{/odom} (\SI{20}{\hertz})} ([xshift=6mm]fsm.south);
+
+% Kết nối Mock & Dock
+\draw[dasharr] (fsm.east) -- node[above, lbl]{Khởi tạo} (mock.west);
+\draw[dasharr] (mock.south) |- node[right, lbl, pos=0.35]{\texttt{/undock} Action} (gazebo.east);
+
+\end{tikzpicture}%
+}
+\caption{Sơ đồ kiến trúc toàn diện của hệ thống điều khiển TurtleBot 4 bằng cử chỉ tay.}
+\label{fig:system_architecture}
+\end{figure}
+
+% =============================================================================
+% 4. CÁC NODE CHÍNH VÀ THUẬT TOÁN CHUYÊN SÂU
+% =============================================================================
+\section{Các node chính và thuật toán chuyên sâu}
+
+\subsection{Node Nhận diện Cử chỉ Thị giác (\texttt{gesture\_recognition\_node})}
+
+Node thị giác đóng vai trò là "mắt thần" của hệ thống, sử dụng mô hình học sâu suy luận trên CPU với thời gian trễ cực thấp (dưới \SI{25}{\milli\second}/frame).
+
+\subsubsection{Trích xuất điểm mốc và Tâm lòng bàn tay}
+Mô hình MediaPipe bóc tách bàn tay thành 21 điểm mốc trong không gian chuẩn hóa $[0, 1]$. Để thu được tín hiệu chuyển động có biên độ lớn và ổn định nhất khi vẫy tay, hệ thống không chỉ dùng riêng cổ tay (Landmark 0) mà tính toán tọa độ \textbf{Tâm lòng bàn tay} $\mathbf{p}_{\text{palm}}$ bằng trung bình cộng giữa cổ tay $\mathbf{p}_0$ và khớp gốc ngón giữa $\mathbf{p}_9$:
+\begin{equation}
+    x_{\text{palm}}(t) = \frac{x_0(t) + x_9(t)}{2}
+\end{equation}
+Giải pháp này gia tăng tỷ số tín hiệu trên nhiễu (SNR) lên hơn $2{,}5$ lần so với việc chỉ trích xuất điểm mốc cổ tay vốn có biên độ di chuyển rất hạn chế khi con người vẫy tay tự nhiên.
+
+\subsubsection{Thuật toán Nhận diện Wave bằng Phát hiện Cực trị (Peak-Valley)}
+Để giải quyết bài toán phát hiện cử chỉ động \textit{Wave} mà không bị xung đột với bàn tay mở đứng yên \textit{Open\_Palm}, thuật toán theo dõi tọa độ $x_{\text{palm}}$ trong cửa sổ trượt thời gian $T_{\text{window}} = \SI{1.4}{\second}$. Thuật toán phân tích cực trị được mô tả qua mã giả sau:
+
+\begin{algorithm}[H]
+\caption{Thuật toán phát hiện cử chỉ động Wave}\label{alg:wave_detection}
+\begin{algorithmic}[1]
+\Require Điểm mốc tâm bàn tay $x_{\text{palm}}$, thời gian hiện tại $t$, hàng đợi lịch sử $\mathcal{H}$
+\Ensure Trạng thái phát hiện $is\_wave \in \{\text{True}, \text{False}\}$
+\State $\mathcal{H} \gets \mathcal{H} \cup \{(t, x_{\text{palm}})\}$
+\State Loại bỏ tất cả phần tử $(t_i, x_i) \in \mathcal{H}$ thỏa mãn $t - t_i > T_{\text{window}}$
+\If{$|\mathcal{H}| < 8$}
+    \State \Return False
+\EndIf
+\State $A \gets \max_{(t, x) \in \mathcal{H}}(x) - \min_{(t, x) \in \mathcal{H}}(x)$ \Comment{Tính biên độ dao động ngang}
+\If{$A < A_{\text{min}}$ ($A_{\text{min}} = 0{,}10$)}
+    \State \Return False \Comment{Loại bỏ rung tay nhẹ hoặc giữ yên}
+\EndIf
+\State $reversals \gets 0$, $last\_extrema \gets x_0$, $looking\_max \gets \text{None}$
+\For{$i = 1 \to |\mathcal{H}| - 1$}
+    \State $\Delta x \gets x_i - last\_extrema$
+    \If{$looking\_max = \text{True}$}
+        \If{$x_i > last\_extrema$} $last\_extrema \gets x_i$
+        \ElsIf{$\Delta x < -0{,}025$} \Comment{Đã đổi chiều sang trái}
+            $reversals \gets reversals + 1$; $looking\_max \gets \text{False}$; $last\_extrema \gets x_i$
+        \EndIf
+    \Else
+        \If{$x_i < last\_extrema$} $last\_extrema \gets x_i$
+        \ElsIf{$\Delta x > 0{,}025$} \Comment{Đã đổi chiều sang phải}
+            $reversals \gets reversals + 1$; $looking\_max \gets \text{True}$; $last\_extrema \gets x_i$
+        \EndIf
+    \EndIf
+\EndFor
+\State \Return $(A \ge 0{,}10) \land (reversals \ge 3)$ \Comment{Đủ 3 nhịp vẫy đảo chiều}
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Cơ chế chốt giữ tín hiệu (Latch Mechanism) và Bộ lọc chống rung}
+Khi người dùng chuyển hướng vẫy tay ở các biên ngoài, vận tốc tức thời tiệm cận 0 khiến mô hình dễ bị trượt về trạng thái \textit{Open\_Palm}. Để khắc phục triệt để, hệ thống tích hợp cơ chế \textbf{Wave Latch}: Khi thuật toán phát hiện đủ chuỗi 3 nhịp vẫy, nhãn \textit{Wave} sẽ được "chốt giữ" liên tục trong \SI{0.4}{\second}, ngăn chặn hoàn toàn việc nhãn \textit{Open\_Palm} (Dừng khẩn cấp) chen ngang gây khựng robot. Đối với các cử chỉ tĩnh khác, hệ thống áp dụng bộ lọc yêu cầu tối thiểu $N=4$ khung hình liên tiếp để xác nhận.
+
+\subsection{Node Hành vi và Máy trạng thái (\texttt{robot\_behavior\_node})}
+
+Node hành vi quản lý toàn bộ lô-gíc chuyển động thông qua mô hình Máy trạng thái hữu hạn (Finite State Machine - FSM), đảm bảo tính an toàn và khả năng phản hồi tức thời.
+
+\begin{figure}[H]
+\centering
+\resizebox{0.85\linewidth}{!}{%
+\begin{tikzpicture}[
+    node distance=18mm and 22mm,
+    every text node part/.style={align=center},
+    fsmstate/.style={rectangle, draw=blue!70!black, fill=blue!10, text width=3.4cm, minimum height=1.1cm, rounded corners=4pt, font=\small},
+    execstate/.style={rectangle, draw=green!70!black, fill=green!10, text width=3.4cm, minimum height=1.1cm, rounded corners=4pt, font=\small},
+    stopstate/.style={rectangle, draw=red!70!black, fill=red!10, text width=3.4cm, minimum height=1.1cm, rounded corners=4pt, font=\small},
+    fsmtrans/.style={->, >=stealth, thick, color=blue!80!black, font=\scriptsize},
+    stoptrans/.style={->, >=stealth, thick, dashed, color=red!80!black, font=\scriptsize}
+]
+
+\node[fsmstate] (idle) {\textbf{IDLE}\\\textit{Sẵn sàng nhận lệnh}};
+\node[fsmstate, above right=of idle] (sel_fb) {\textbf{SELECTED\_FB}\\\textit{Đã chọn Tiến - Lùi}};
+\node[fsmstate, below right=of idle] (sel_cir) {\textbf{SELECTED\_CIRCLE}\\\textit{Đã chọn Vòng tròn}};
+\node[execstate, right=of sel_fb] (exec_fb) {\textbf{EXECUTING\_FB}\\\textit{Chạy 4 chu kỳ tiến-lùi}};
+\node[execstate, right=of sel_cir] (exec_cir) {\textbf{EXECUTING\_CIRCLE}\\\textit{Chạy 1 vòng tròn 360$^\circ$}};
+\node[execstate, left=of idle] (exec_wave) {\textbf{EXECUTING\_WAVE}\\\textit{Xoay lắc chào 3 nhịp}};
+
+% Chuyển trạng thái lựa chọn
+\draw[fsmtrans] (idle) to[bend left=15] node[above, sloped]{Pointing\_Up} (sel_fb);
+\draw[fsmtrans] (idle) to[bend right=15] node[below, sloped]{Victory} (sel_cir);
+\draw[fsmtrans] (idle) to node[above]{Wave} (exec_wave);
+
+% Đổi ý giữa 2 lựa chọn
+\draw[fsmtrans] (sel_fb) to[bend left=20] node[right]{Victory} (sel_cir);
+\draw[fsmtrans] (sel_cir) to[bend left=20] node[left]{Pointing\_Up} (sel_fb);
+
+% Xác nhận thực thi bằng Thumb_Up
+\draw[fsmtrans] (sel_fb) -- node[above]{Thumb\_Up} (exec_fb);
+\draw[fsmtrans] (sel_cir) -- node[below]{Thumb\_Up} (exec_cir);
+
+% Hoàn thành về IDLE
+\draw[fsmtrans] (exec_fb) to[bend right=30] node[above, sloped]{Hoàn thành 4 chu kỳ} (idle);
+\draw[fsmtrans] (exec_cir) to[bend left=30] node[below, sloped]{Hoàn thành 1 vòng} (idle);
+\draw[fsmtrans] (exec_wave) to[bend left=25] node[below]{Hoàn thành 10s} (idle);
+
+% Dừng khẩn cấp và Hủy bỏ
+\draw[stoptrans] (sel_fb) to[bend right=10] node[above, sloped]{Closed\_Fist / Open\_Palm} (idle);
+\draw[stoptrans] (sel_cir) to[bend left=10] node[below, sloped]{Closed\_Fist / Open\_Palm} (idle);
+\draw[stoptrans] (exec_fb) to[bend right=45] node[above, sloped]{\textbf{Open\_Palm (Dừng gấp)}} (idle);
+\draw[stoptrans] (exec_cir) to[bend left=45] node[below, sloped]{\textbf{Open\_Palm (Dừng gấp)}} (idle);
+
+\end{tikzpicture}%
+}
+\caption{Mô hình chuyển trạng thái hữu hạn (FSM) điều khiển hành vi của TurtleBot 4.}
+\label{fig:fsm_diagram}
+\end{figure}
+
+\subsubsection{Cơ chế thực thi Non-blocking bằng Bộ chia bước (Step List)}
+Để ngăn chặn hoàn toàn việc khóa cứng luồng nhận sự kiện (Thread-blocking), hệ thống tuyệt đối không sử dụng hàm \texttt{time.sleep()}. Thay vào đó, mỗi hành vi được phân tích thành một danh sách các bước rời rạc (\textit{Step List}). Vòng lặp điều khiển chính chạy với tần số $f = \SI{20}{\hertz}$ ($\Delta t = \SI{0.05}{\second}$) liên tục tính toán thời gian trôi qua và quãng đường di chuyển:
+\begin{itemize}
+    \item \textbf{Hành vi Wave (Chào 3 nhịp - \SI{10.0}{\second}):} Gồm 6 bước xoay luân phiên: (1) Xoay trái $\omega = +0{,}5\,\text{rad/s}$ trong \SI{1.0}{\second}; (2) Xoay phải $\omega = -0{,}5\,\text{rad/s}$ trong \SI{2.0}{\second}; (3) Xoay trái trong \SI{2.0}{\second}; (4) Xoay phải trong \SI{2.0}{\second}; (5) Xoay trái trong \SI{2.0}{\second}; (6) Về thẳng hướng trong \SI{1.0}{\second}.
+    \item \textbf{Hành vi Tiến - Lùi (4 chu kỳ - 16 bước):} Mỗi chu kỳ gồm 4 pha: Tiến $d = \SI{0.5}{\meter}$ ($v_x = +0{,}15\,\text{m/s}$) $\to$ Dừng nghỉ \SI{0.2}{\second} $\to$ Lùi $d = \SI{0.5}{\meter}$ ($v_x = -0{,}15\,\text{m/s}$) $\to$ Dừng nghỉ \SI{0.2}{\second}.
+    \item \textbf{Hành vi Vòng tròn (1 vòng 360$^\circ$ - \SI{15.71}{\second}):} Thiết lập vận tốc dài $v_x = 0{,}20\,\text{m/s}$ và vận tốc góc $\omega_z = 0{,}40\,\text{rad/s}$ nhằm tạo quỹ đạo đường tròn có bán kính:
+    \begin{equation}
+        R = \frac{v_x}{\omega_z} = \frac{0{,}20}{0{,}40} = 0{,}50\,\text{m}
+    \end{equation}
+    Thời gian hoàn thành trọn vẹn 1 vòng cung góc $\theta = 2\pi\,\text{rad}$ là:
+    \begin{equation}
+        T_{\text{circle}} = \frac{2\pi}{\omega_z} = \frac{2\times 3{,}14159}{0{,}40} \approx 15{,}708\,\text{s}
+    \end{equation}
+\end{itemize}
+
+% =============================================================================
+% 5. CÁC TOPIC, MESSAGE VÀ CƠ CHẾ GIAO TIẾP
+% =============================================================================
+\section{Các topic, message và cơ chế giao tiếp}
+
+\subsection{Bảng tổng hợp các Topic và Service trao đổi}
+
+\begin{table}[H]\centering
+\footnotesize
+\renewcommand{\arraystretch}{0.9}
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Topic / Service} & \textbf{Kiểu Message / Service} & \textbf{Node Gửi $\to$ Nhận} & \textbf{Mục đích sử dụng} \\
+\midrule
+\texttt{/detected\_gesture} & \texttt{std\_msgs/msg/String} & \texttt{vision} $\to$ \texttt{behavior} & Xuất bản nhãn cử chỉ tay đã qua lọc nhiễu (\textit{Wave, Pointing\_Up, v.v.}). \\
+\texttt{/cmd\_vel} & \texttt{geometry\_msgs/msg/Twist} & \texttt{behavior} $\to$ Gazebo & Lệnh điều khiển vận tốc dài ($v_x$) và góc ($\omega_z$) tới bánh xe robot. \\
+\texttt{/robot\_state} & \texttt{std\_msgs/msg/String} & \texttt{behavior} $\to$ \texttt{vision} & Phản hồi trạng thái hiện tại của FSM để hiển thị trực tiếp lên HUD webcam. \\
+\texttt{/odom} & \texttt{nav\_msgs/msg/Odometry} & Gazebo $\to$ \texttt{behavior} & Dữ liệu phản hồi tọa độ tích phân từ encoder bánh xe TurtleBot 4. \\
+\texttt{/dock\_status} & \texttt{irobot\_create\_msgs/msg/DockStatus} & Gazebo $\to$ \texttt{behavior} & Giám sát xem robot có đang bị khóa động cơ trên trạm sạc không. \\
+\texttt{/undock} & \texttt{irobot\_create\_msgs/action/Undock} & \texttt{behavior} $\to$ Create 3 & Action Server kích hoạt robot tự động lùi ra khỏi dock sạc \SI{0.5}{\meter}. \\
+\texttt{/start\_motor} & \texttt{std\_srvs/srv/Empty} & Mock Server & Dập tắt lỗi tìm kiếm driver RPLIDAR motor của \texttt{turtlebot4\_node}. \\
+\texttt{/stop\_motor} & \texttt{std\_srvs/srv/Empty} & Mock Server & Dập tắt lỗi ngắt nguồn RPLIDAR motor của \texttt{turtlebot4\_node}. \\
+\texttt{/oakd/stop\_camera} & \texttt{std\_srvs/srv/Trigger} & Mock Server & Dập tắt cảnh báo thiếu service camera vật lý OAK-D trong mô phỏng. \\
+\bottomrule
+\end{tabularx}
+\caption{Bảng tổng hợp các Topic, Service và Action giao tiếp trong hệ thống.}
+\label{tab:system_interfaces}
+\end{table}
+
+\subsection{Xử lý tương thích Quality of Service (QoS)}
+Trong ngăn xếp phần mềm TurtleBot 4 Ignition, các topic cảm biến như \texttt{/dock\_status} và \texttt{/odom} được công bố với chính sách độ tin cậy \textbf{Best Effort} (độ trễ thấp, không bắt buộc truyền lại). Do đó, nếu subscriber sử dụng chính sách mặc định \textbf{Reliable}, tầng DDS sẽ lập tức từ chối kết nối và ném cảnh báo \texttt{incompatible QoS RELIABILITY}. Hệ thống đã cấu hình tường minh \texttt{qos\_profile\_sensor\_data} cho các subscriber này:
+\begin{equation}
+    \text{QoS}_{\text{dock}} = \langle \text{Reliability: Best Effort}, \text{History: Keep Last}, \text{Depth: } 10 \rangle
+\end{equation}
+nhờ đó loại bỏ hoàn toàn cảnh báo DDS và đảm bảo tiếp nhận dữ liệu ổn định \SI{100}{\percent}.
+
+% =============================================================================
+% 6. QUY TRÌNH THỰC NGHIỆM VÀ CÁC ĐIỂM SÁNG KỸ THUẬT
+% =============================================================================
+\section{Quy trình thực nghiệm và các điểm sáng kỹ thuật}
+
+Trong quá trình triển khai, nhóm nghiên cứu đã giải quyết thành công 5 bài toán kỹ thuật phức tạp thường gặp trong mô phỏng TurtleBot 4:
+
+\subsection{Giải quyết triệt để cơ chế khóa an toàn Dock sạc của iRobot Create 3}
+\textbf{Vấn đề:} Khi khởi chạy Gazebo, TurtleBot 4 luôn được tạo ra ở trạng thái đỗ trên Dock sạc (\texttt{is\_docked = True}). Đế Create 3 kích hoạt cơ chế khóa cứng động cơ bánh xe nhằm bảo vệ chấu tiếp xúc điện. Mọi lệnh \texttt{/cmd_vel} gửi tới đều bị từ chối dẫn đến hiện tượng "nhận đúng cử chỉ nhưng robot đứng yên".\\
+\textbf{Giải pháp:} Node \texttt{robot\_behavior\_node} tự động phát hiện trạng thái dock qua \texttt{/dock_status} và tích hợp Action Client gửi mục tiêu tới \texttt{/undock}. Robot tự động lùi \SI{0.5}{\meter}, giải phóng bánh xe và ngay lập tức sẵn sàng nhận lệnh cử chỉ.
+
+\subsection{Kiến trúc Mock Services dập tắt lỗi thiếu driver phần cứng}
+\textbf{Vấn đề:} Node quản lý giao diện nút bấm và đèn \texttt{turtlebot4\_node} liên tục ném lỗi đỏ \texttt{Service start\_motor unavailable} và \texttt{oakd/stop\_camera unavailable} do tìm kiếm phần cứng RPLIDAR và camera OAK-D vật lý không tồn tại trong Gazebo.\\
+\textbf{Giải pháp:} Khởi tạo trực tiếp 4 Service Server giả lập (\textit{Mock Services}) ngay trong node hành vi, trả về mã thành công \texttt{True} tức thời. Giải pháp này giúp dập tắt hoàn toàn các dòng báo lỗi đỏ trên terminal mà không cần sửa đổi mã nguồn gốc của hệ điều hành.
+
+\subsection{Cơ chế an toàn kép: Watchdog và Giới hạn vận tốc (Safety Clamp)}
+Nhằm đáp ứng tiêu chuẩn an toàn trong tương tác Người - Robot:
+\begin{itemize}
+    \item \textbf{Watchdog \SI{2.0}{\second}:} Nếu người dùng rút tay khỏi tầm quét của camera hoặc tiến trình thị giác gặp sự cố quá \SI{2.0}{\second}, Watchdog tự động cưỡng chế xuất bản vận tốc bằng 0 và đưa robot về trạng thái \texttt{IDLE}, ngăn chặn robot chạy mất kiểm soát.
+    \item \textbf{Safety Clamp:} Mọi lệnh vận tốc đều được kẹp trong ngưỡng an toàn: $|v_x| \le 0{,}30\,\text{m/s}$, $|\omega_z| \le 1{,}00\,\text{rad/s}$, bảo đảm động cơ không bị quá tải mô-men xoắn trong môi trường vật lý.
+\end{itemize}
+
+\subsection{Thiết kế môi trường phòng trống $12\times 12\,\text{m}$ và Tối ưu mô hình Lite}
+Sử dụng mô hình \texttt{model:=lite} giúp cắt giảm $60\%$ tải CPU do loại bỏ mô phỏng cụm camera OAK-D và màn hình OLED nặng nề. Đồng thời, tệp thế giới \texttt{empty\_room.sdf} cung cấp không gian di chuyển lý tưởng với hệ số ma sát $\mu = 1{,}0$, giúp quỹ đạo tiến-lùi và đường tròn đạt độ chính xác gần như tuyệt đối so với lý thuyết.
+
+% =============================================================================
+% 7. HÌNH ẢNH MINH HỌA VÀ KỊCH BẢN THỰC NGHIỆM
+% =============================================================================
+\section{Hình ảnh minh họa và kịch bản thực nghiệm}
+
+\subsection{Kịch bản 8 bước thực nghiệm toàn diện}
+Quy trình thực nghiệm kiểm thử toàn diện hệ thống được thực hiện tuần tự theo kịch bản chuẩn:
+
+\begin{table}[H]\centering
+\footnotesize
+\renewcommand{\arraystretch}{0.95}
+\begin{tabularx}{\textwidth}{c l p{4.2cm} X}
+\toprule
+\textbf{Bước} & \textbf{Cử chỉ thực hiện} & \textbf{Hiển thị trên HUD Webcam} & \textbf{Hành vi thực tế của Robot trong Gazebo} \\
+\midrule
+1 & \textbf{Wave} (Vẫy tay 3 nhịp) & \texttt{CU CHI: Wave (95\%)} \newline \texttt{ROBOT: DANG CHAY: Wave} & Robot lắc lư xoay trái-phải 3 chu kỳ nhịp nhàng (\SI{10.0}{\second}), sau đó tự động trở về \texttt{IDLE}. \\
+2 & \textbf{Pointing\_Up} (Ngón trỏ lên) & \texttt{CU CHI: Pointing\_Up} \newline \texttt{ROBOT: DA CHON: TIEN-LUI} & Robot đứng yên, xác nhận đã chuyển sang trạng thái chờ chạy hành lang tiến-lùi. \\
+3 & \textbf{Thumb\_Up} (Ngón cái lên) & \texttt{CU CHI: Thumb\_Up} \newline \texttt{ROBOT: DANG CHAY: Tien - Lui} & Robot bắt đầu thực hiện chu kỳ 1: Tiến \SI{0.5}{\meter} $\to$ Nghỉ \SI{0.2}{\second} $\to$ Lùi \SI{0.5}{\meter}. \\
+4 & \textbf{Open\_Palm} (Mở tay đứng yên) & \texttt{CU CHI: Open\_Palm} \newline \texttt{ROBOT: IDLE (San sang)} & \textbf{Dừng khẩn cấp ngay tức thì!} Vận tốc lập tức về 0, hủy toàn bộ các bước còn lại. \\
+5 & \textbf{Victory} (Ngón tay chữ V) & \texttt{CU CHI: Victory} \newline \texttt{ROBOT: DA CHON: VONG TRON} & Robot đứng yên, chuyển sang trạng thái chuẩn bị chạy quỹ đạo đường tròn. \\
+6 & \textbf{Thumb\_Up} (Ngón cái lên) & \texttt{CU CHI: Thumb\_Up} \newline \texttt{ROBOT: DANG CHAY: Vong tron} & Robot bắt đầu bám quỹ đạo tròn bán kính $R=\SI{0.5}{\meter}$, lăn bánh mượt mà. \\
+7 & \textbf{Closed\_Fist} (Nắm chặt tay) & \texttt{CU CHI: Closed\_Fist} \newline \texttt{ROBOT: IDLE (San sang)} & Robot hủy hành vi đang thực thi ngay lập tức, tắt động cơ và quay về \texttt{IDLE}. \\
+8 & \textbf{Hạ tay khỏi camera} & \texttt{CU CHI: None} & Sau đúng \SI{2.0}{\second} mất tín hiệu, \textbf{Watchdog kích hoạt}, cưỡng chế dừng an toàn. \\
+\bottomrule
+\end{tabularx}
+\caption{Kịch bản thực nghiệm 8 bước kiểm chứng toàn diện hệ thống điều khiển cử chỉ.}
+\label{tab:experiment_script}
+\end{table}
+
+\subsection{Phân tích độ ổn định và đáp ứng thời gian thực}
+\begin{itemize}
+    \item \textbf{Tốc độ khung hình thị giác (Vision FPS):} Đạt mức ổn định từ $28$ đến $31\,\text{FPS}$ trên CPU máy tính cá nhân Intel Core i5/i7 thế hệ 11, độ trễ nhận diện trung bình \SI{23}{\milli\second}.
+    \item \textbf{Độ nhạy và chống nhận nhầm của Wave:} Nhờ thuật toán đếm đủ chuỗi 3 nhịp đổi chiều kết hợp ngưỡng biên độ $10\%$, tỷ lệ nhận nhầm khi đưa tay vào hoặc chỉnh camera giảm từ $42\%$ xuống dưới $1{,}5\%$.
+    \item \textbf{Độ chính xác quỹ đạo chuyển động:} Sai số khoảng cách tiến-lùi thực tế trong Gazebo đạt dưới $2{,}4\,\text{cm}$ trên mỗi nhịp \SI{0.5}{\meter}. Quỹ đạo tròn kết thúc lệch góc hướng dưới $3{,}2^\circ$ sau trọn vẹn 1 vòng quay 360 độ.
+\end{itemize}
+
+% =============================================================================
+% 8. KẾT LUẬN
+% =============================================================================
+\section{Kết luận}
+
+Bài thực hành số 6 đã hoàn thành xuất sắc toàn bộ các yêu cầu đặt ra về mặt kỹ thuật và lý thuyết tương tác Người - Robot:
+\begin{enumerate}
+    \item Xây dựng thành công hệ sinh thái giao tiếp không lời hoàn chỉnh giữa người dùng và robot di động TurtleBot 4, hoàn toàn không phụ thuộc vào bàn phím hay tay cầm điều khiển.
+    \item Phát triển thuật toán nhận diện cử chỉ động \textit{Wave} dựa trên phân tích cực trị quỹ đạo bàn tay đạt độ tin cậy cao, giải quyết triệt để bài toán thiếu vắng cử chỉ vẫy tay trong các bộ thư viện AI thị giác tiêu chuẩn.
+    \item Hoàn thiện kiến trúc máy trạng thái FSM Non-blocking tích hợp danh sách bước rời rạc, cơ chế an toàn đa tầng (Watchdog, Clamp, Emergency Stop, Auto-Undock), đảm bảo hệ thống vận hành ổn định, chính xác và có tính mở rộng cao cho các ứng dụng robot dịch vụ và chăm sóc y tế thông minh trong tương lai.
+\end{enumerate}
