@@ -1,0 +1,107 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <world name="empty_room">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.003</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="ignition-gazebo-physics-system" name="ignition::gazebo::systems::Physics"></plugin>
+    <plugin filename="ignition-gazebo-user-commands-system" name="ignition::gazebo::systems::UserCommands"></plugin>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system" name="ignition::gazebo::systems::SceneBroadcaster"></plugin>
+
+    <!-- Anh sang mat troi -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Mat san phang rong 14m x 14m -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>20 20</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>20 20</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 4 buc tuong bao quanh tao thanh phong trong 12m x 12m khong vat can -->
+    <model name="room_walls">
+      <static>true</static>
+      <!-- Tuong Bac (y = +6) -->
+      <link name="wall_north">
+        <pose>0 6 1 0 0 0</pose>
+        <collision name="col">
+          <geometry><box><size>12 0.3 2</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>12 0.3 2</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material>
+        </visual>
+      </link>
+      <!-- Tuong Nam (y = -6) -->
+      <link name="wall_south">
+        <pose>0 -6 1 0 0 0</pose>
+        <collision name="col">
+          <geometry><box><size>12 0.3 2</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>12 0.3 2</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material>
+        </visual>
+      </link>
+      <!-- Tuong Dong (x = +6) -->
+      <link name="wall_east">
+        <pose>6 0 1 0 0 0</pose>
+        <collision name="col">
+          <geometry><box><size>0.3 12 2</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.3 12 2</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material>
+        </visual>
+      </link>
+      <!-- Tuong Tay (x = -6) -->
+      <link name="wall_west">
+        <pose>-6 0 1 0 0 0</pose>
+        <collision name="col">
+          <geometry><box><size>0.3 12 2</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.3 12 2</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>
+
