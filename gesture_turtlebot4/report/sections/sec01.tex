@@ -249,20 +249,28 @@ Node hành vi quản lý toàn bộ lô-gíc chuyển động thông qua mô hì
 
 \begin{table}[H]\centering
 \footnotesize
-\renewcommand{\arraystretch}{0.9}
-\begin{tabularx}{\textwidth}{l l l X}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.6cm} >{\raggedright\arraybackslash}p{2.6cm} >{\raggedright\arraybackslash}p{2.0cm} X}
 \toprule
-\textbf{Topic / Service} & \textbf{Kiểu Message / Service} & \textbf{Node Gửi $\to$ Nhận} & \textbf{Mục đích sử dụng} \\
+\textbf{Topic / Service} & \textbf{Kiểu Interface} & \textbf{Node Gửi $\to$ Nhận} & \textbf{Mục đích sử dụng} \\
 \midrule
-\texttt{/detected\_gesture} & \texttt{std\_msgs/msg/String} & \texttt{vision} $\to$ \texttt{behavior} & Xuất bản nhãn cử chỉ tay đã qua lọc nhiễu (\textit{Wave, Pointing\_Up, v.v.}). \\
-\texttt{/cmd\_vel} & \texttt{geometry\_msgs/msg/Twist} & \texttt{behavior} $\to$ Gazebo & Lệnh điều khiển vận tốc dài ($v_x$) và góc ($\omega_z$) tới bánh xe robot. \\
-\texttt{/robot\_state} & \texttt{std\_msgs/msg/String} & \texttt{behavior} $\to$ \texttt{vision} & Phản hồi trạng thái hiện tại của FSM để hiển thị trực tiếp lên HUD webcam. \\
-\texttt{/odom} & \texttt{nav\_msgs/msg/Odometry} & Gazebo $\to$ \texttt{behavior} & Dữ liệu phản hồi tọa độ tích phân từ encoder bánh xe TurtleBot 4. \\
-\texttt{/dock\_status} & \texttt{irobot\_create\_msgs/msg/DockStatus} & Gazebo $\to$ \texttt{behavior} & Giám sát xem robot có đang bị khóa động cơ trên trạm sạc không. \\
-\texttt{/undock} & \texttt{irobot\_create\_msgs/action/Undock} & \texttt{behavior} $\to$ Create 3 & Action Server kích hoạt robot tự động lùi ra khỏi dock sạc \SI{0.5}{\meter}. \\
-\texttt{/start\_motor} & \texttt{std\_srvs/srv/Empty} & Mock Server & Dập tắt lỗi tìm kiếm driver RPLIDAR motor của \texttt{turtlebot4\_node}. \\
-\texttt{/stop\_motor} & \texttt{std\_srvs/srv/Empty} & Mock Server & Dập tắt lỗi ngắt nguồn RPLIDAR motor của \texttt{turtlebot4\_node}. \\
-\texttt{/oakd/stop\_camera} & \texttt{std\_srvs/srv/Trigger} & Mock Server & Dập tắt cảnh báo thiếu service camera vật lý OAK-D trong mô phỏng. \\
+\texttt{/detected\_gesture} & \texttt{std\_msgs/}\newline\texttt{String} & \texttt{vision} $\to$\newline\texttt{behavior} & Xuất bản nhãn cử chỉ tay đã qua lọc nhiễu (\textit{Wave, Pointing\_Up, v.v.}). \\
+\addlinespace[2pt]
+\texttt{/cmd\_vel} & \texttt{geometry\_msgs/}\newline\texttt{Twist} & \texttt{behavior} $\to$\newline Gazebo & Lệnh điều khiển vận tốc dài ($v_x$) và góc ($\omega_z$) tới bánh xe robot. \\
+\addlinespace[2pt]
+\texttt{/robot\_state} & \texttt{std\_msgs/}\newline\texttt{String} & \texttt{behavior} $\to$\newline\texttt{vision} & Phản hồi trạng thái hiện tại của FSM để hiển thị trực tiếp lên HUD webcam. \\
+\addlinespace[2pt]
+\texttt{/odom} & \texttt{nav\_msgs/}\newline\texttt{Odometry} & Gazebo $\to$\newline\texttt{behavior} & Dữ liệu phản hồi tọa độ tích phân từ encoder bánh xe TurtleBot 4. \\
+\addlinespace[2pt]
+\texttt{/dock\_status} & \texttt{irobot\_create\_msgs/}\newline\texttt{DockStatus} & Gazebo $\to$\newline\texttt{behavior} & Giám sát xem robot có đang bị khóa động cơ trên trạm sạc không. \\
+\addlinespace[2pt]
+\texttt{/undock} & \texttt{irobot\_create\_msgs/}\newline\texttt{action/Undock} & \texttt{behavior} $\to$\newline Create 3 & Action Server kích hoạt robot tự động lùi ra khỏi dock sạc \SI{0.5}{\meter}. \\
+\addlinespace[2pt]
+\texttt{/start\_motor} & \texttt{std\_srvs/}\newline\texttt{Empty} & Mock Server & Dập tắt lỗi tìm kiếm driver RPLIDAR motor của \texttt{turtlebot4\_node}. \\
+\addlinespace[2pt]
+\texttt{/stop\_motor} & \texttt{std\_srvs/}\newline\texttt{Empty} & Mock Server & Dập tắt lỗi ngắt nguồn RPLIDAR motor của \texttt{turtlebot4\_node}. \\
+\addlinespace[2pt]
+\texttt{/oakd/stop\_camera} & \texttt{std\_srvs/}\newline\texttt{Trigger} & Mock Server & Dập tắt cảnh báo thiếu service camera vật lý OAK-D trong mô phỏng. \\
 \bottomrule
 \end{tabularx}
 \caption{Bảng tổng hợp các Topic, Service và Action giao tiếp trong hệ thống.}
@@ -348,3 +356,4 @@ Bài thực hành số 6 đã hoàn thành xuất sắc toàn bộ các yêu c�
     \item Phát triển thuật toán nhận diện cử chỉ động \textit{Wave} dựa trên phân tích cực trị quỹ đạo bàn tay đạt độ tin cậy cao, giải quyết triệt để bài toán thiếu vắng cử chỉ vẫy tay trong các bộ thư viện AI thị giác tiêu chuẩn.
     \item Hoàn thiện kiến trúc máy trạng thái FSM Non-blocking tích hợp danh sách bước rời rạc, cơ chế an toàn đa tầng (Watchdog, Clamp, Emergency Stop, Auto-Undock), đảm bảo hệ thống vận hành ổn định, chính xác và có tính mở rộng cao cho các ứng dụng robot dịch vụ và chăm sóc y tế thông minh trong tương lai.
 \end{enumerate}
+
