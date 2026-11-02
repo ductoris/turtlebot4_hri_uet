@@ -1,0 +1,41 @@
+# Cau hinh tham so cho he thong dieu khien TurtleBot 4 bang cu chi tay
+
+gesture_recognition_node:
+  ros__parameters:
+    camera_index: 0
+    confidence_threshold: 0.68   # Nguong tin cay chat che de khong bat nham cu chi
+    confirmation_frames: 4       # So khung hinh de chot cac cu chi tinh
+    gesture_cooldown_sec: 1.0
+    wave_min_amplitude: 0.10     # Tang bien do len 10% man hinh (phai vay tay ro rang, tranh nham)
+    wave_min_reversals: 3        # Yeu cau toi thieu 3 lan doi chieu (chuoi 3 nhip vay qua lai)
+    wave_window_sec: 1.4         # Cua so 1.4 giay du de nguoi dung vay du 3 nhip
+    show_gui: true               # Bat cua so OpenCV kem HUD
+    flip_camera: true            # Lat guong webcam de cu chi truc quan
+    model_path: ""               # De trong de tu dong tim trong models/
+
+robot_behavior_node:
+  ros__parameters:
+    cmd_vel_topic: "/cmd_vel"    # Topic dieu khien van toc chuan (geometry_msgs/msg/Twist)
+    state_topic: "/robot_state"  # Topic phan hoi trang thai robot
+    gesture_topic: "/detected_gesture"
+    odom_topic: "/odom"
+    use_odom: false              # Dung time-based de robot chay chuan xac khong phu thuoc odom
+    watchdog_timeout: 2.0        # Dung robot neu mat tin hieu cu chi qua 2.0 giay
+    auto_undock: true            # Tu dong gui lenh undock neu robot dang do tren dock sac
+    max_linear_speed: 0.30       # Gioi han toc do dai an toan toi da (m/s)
+    max_angular_speed: 1.00      # Gioi han toc do goc an toan toi da (rad/s)
+    
+    # Tham so hanh vi Tien - Lui
+    forward_speed: 0.15          # Van toc tien/lui (m/s)
+    forward_distance: 0.50       # Quang duong moi nhip (m)
+    forward_back_cycles: 4       # Tong so chu ky tien-lui (4 tien, 4 lui)
+    pause_between_steps: 0.2     # Khoang dung giua cac nhip doi chieu (giay)
+
+    # Tham so hanh vi Vong tron
+    circle_linear_speed: 0.20    # Van toc dai (m/s)
+    circle_angular_speed: 0.40   # Van toc goc (rad/s) -> Ban kinh R = v/w = 0.5 m
+    circle_duration: 15.71       # Thoi gian chay du 1 vong tron: 2 * pi / 0.40 = 15.708 s
+
+    # Tham so hanh vi Chao lai (Wave) - Chuoi 3 nhip ro rang, thoi gian lau hon
+    wave_angular_speed: 0.50     # Van toc xoay em diu (rad/s)
+    wave_step_duration: 1.00     # Moi nhip xoay 1.0s -> Tong thoi gian vay chao khoang 10 giay

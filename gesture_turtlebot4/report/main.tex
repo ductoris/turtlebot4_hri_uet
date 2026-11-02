@@ -1,0 +1,208 @@
+\documentclass[12pt,a4paper]{report}
+
+% ==============================================================================
+% 1. NGÔN NGỮ & FONT CHỮ (Yêu cầu biên dịch bằng XeLaTeX hoặc LuaLaTeX)
+% ==============================================================================
+\usepackage{fontspec}
+\usepackage{polyglossia}
+\setdefaultlanguage{vietnamese}
+
+% ==============================================================================
+% 2. CÁC GÓI CƠ BẢN & ĐỊNH DẠNG TRANG (PAGE LAYOUT)
+% ==============================================================================
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{indentfirst}    % Lùi đầu dòng ở đoạn đầu tiên của section
+\usepackage{ragged2e}       % Hỗ trợ căn lề tốt hơn (justifying)
+\usepackage{microtype}      % Giúp giãn chữ và canh lề đoạn văn đẹp
+\usepackage{enumitem}       % Tùy chỉnh danh sách
+
+% ==============================================================================
+% 3. TOÁN HỌC & ĐƠN VỊ (MATH)
+% ==============================================================================
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{siunitx}
+
+% ==============================================================================
+% 4. ĐỒ HỌA, MÀU SẮC & TIKZ (GRAPHICS & COLORS)
+% ==============================================================================
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+
+\usepackage{tikz}
+\usetikzlibrary{
+    positioning,
+    arrows.meta,
+    shapes.geometric,
+    fit
+}
+
+% ==============================================================================
+% 5. BẢNG BIỂU (TABLES)
+% ==============================================================================
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{xltabular}
+\usepackage{multirow}
+\usepackage{pmboxdraw}
+
+% ==============================================================================
+% 6. CODE, THUẬT TOÁN & CẤU TRÚC THƯ MỤC (CODE & ALGORITHMS)
+% ==============================================================================
+\usepackage{listings}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{dirtree}
+\usepackage{seqsplit}
+
+% ==============================================================================
+% 7. LIÊN KẾT (HYPERREF)
+% ==============================================================================
+\usepackage{hyperref}
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% B. ĐỊNH NGHĨA MÀU SẮC & CẤU HÌNH GÓI
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\definecolor{nodeblue}{RGB}{218, 232, 252}
+\definecolor{nodegreen}{RGB}{213, 232, 212}
+\definecolor{nodegray}{RGB}{235, 238, 242}
+\definecolor{nodeorange}{RGB}{255, 230, 204}
+
+\geometry{
+    top=2.5cm,
+    bottom=2.5cm,
+    left=3cm,
+    right=2cm
+}
+\setlength{\headheight}{15pt}
+
+\sisetup{
+    output-decimal-marker={,}
+}
+
+\renewcommand{\thesection}{\arabic{section}}
+\renewcommand{\thesubsection}{\thesection.\arabic{subsection}}
+\renewcommand{\thesubsubsection}{\thesubsection.\arabic{subsubsection}}
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{3}
+
+\titleformat{\section}
+  {\normalfont\Large\bfseries\color{blue!66!black}}
+  {\thesection.}
+  {0.6em}
+  {}
+  [\titlerule]
+
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\color{blue!55!black}}
+  {\thesubsection.}
+  {0.6em}
+  {}
+
+\titleformat{\subsubsection}
+  {\normalfont\normalsize\bfseries}
+  {\thesubsubsection.}
+  {0.6em}
+  {}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue!70!black
+}
+
+\tikzset{
+    every text node part/.style={align=center},
+    block/.style={rectangle, draw=blue!60, fill=blue!10, text width=2.6cm, minimum height=1.0cm, rounded corners=3pt, font=\small},
+    ext/.style={rectangle, draw=gray!60, fill=gray!15, text width=2.4cm, minimum height=1.0cm, rounded corners=3pt, font=\small},
+    arr/.style={->, >=stealth, thick, color=blue!80!black},
+    dasharr/.style={->, >=stealth, thick, dashed, color=teal!70!black}
+}
+
+\newcommand{\code}[1]{\texttt{\seqsplit{#1}}}
+\newcommand{\tab}{\hspace*{2em}}
+
+% ================== HEADER / FOOTER ==================
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Thực hành Tương tác Người - Robot}
+\fancyhead[R]{\small \textit{Tuần 6}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\begin{document}
+
+% ======================================================
+%                       TRANG BÌA
+% ======================================================
+\thispagestyle{empty}
+
+\begin{tikzpicture}[remember picture, overlay]
+  % Outer bold border
+  \draw[line width=2pt]
+    ([xshift=2.3cm,yshift=-1.5cm]current page.north west) rectangle
+    ([xshift=-1.5cm,yshift=1.5cm]current page.south east);
+
+  % Inner light border
+  \draw[line width=0.4pt]
+    ([xshift=2.4cm,yshift=-1.6cm]current page.north west) rectangle
+    ([xshift=-1.6cm,yshift=1.6cm]current page.south east);
+\end{tikzpicture}
+
+\begin{center}
+    \textbf{\fontsize{16pt}{16pt}\selectfont
+    ĐẠI HỌC QUỐC GIA HÀ NỘI \\ 
+    TRƯỜNG ĐẠI HỌC CÔNG NGHỆ} \\[1.2cm]
+
+    \includegraphics[width=4cm]{images/uet_logo.png}\\[1cm]
+    
+    {\fontsize{16pt}{16pt}\selectfont \textbf{BÁO CÁO TƯƠNG TÁC NGƯỜI - ROBOT}}\\
+
+    \vspace{2cm}
+    
+    {\fontsize{22pt}{30pt}\selectfont
+    \textbf{\MakeUppercase{Thực hành tuần 6 \\ Giao tiếp phi ngôn ngữ và điều khiển TurtleBot 4 bằng cử chỉ tay}}
+    }
+
+    \vspace{2cm}
+
+    \begin{tabular}{rl}
+      {\fontsize{15pt}{18pt}\selectfont \textbf{Sinh viên thực hiện:}} 
+      & {\fontsize{15pt}{18pt}\selectfont \textbf{Mai Đức Trí - 23020776}} \\
+      \\
+      \\
+      \\
+      {\fontsize{15pt}{18pt}\selectfont \textbf{Giảng viên phụ trách:}} 
+      & {\fontsize{15pt}{18pt}\selectfont \textbf{PGS.TS. Hoàng Văn Xiêm}} \\
+      & {\fontsize{15pt}{18pt}\selectfont \textbf{KS. Nguyễn Quốc Bảo}} \\
+    \end{tabular}
+    
+    \vspace{3.5cm}
+    {\fontsize{12pt}{12pt}\selectfont \textbf{HÀ NỘI - 2026}}\\
+\end{center}
+
+% ======================================================
+%                       MỤC LỤC
+% ======================================================
+\newpage
+\pagestyle{empty}
+\tableofcontents
+\thispagestyle{empty}
+
+% ======================================================
+%                       NỘI DUNG
+% ======================================================
+\newpage
+\setcounter{page}{1}
+\pagestyle{fancy}
+
+\include{sections/sec01}
+
+\end{document}
