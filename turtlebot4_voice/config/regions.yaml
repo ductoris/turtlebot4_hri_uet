@@ -1,0 +1,217 @@
+mode: auto
+resolution: 0.05
+origin:
+- -5.5
+- -4.5
+- 0.0
+regions:
+- id: A
+  name: Phòng học
+  aliases:
+  - khu vực a
+  - khu vuc a
+  - phòng a
+  - phong a
+  - phòng học
+  - phong hoc
+  - lớp học
+  - lop hoc
+  pixel_goal:
+  - 71
+  - 49
+  world_goal:
+  - -1.925
+  - 2.025
+  yaw: 0.0
+  clearance_m: 0.899
+  area_m2: 12.03
+  bbox_pixels:
+  - 13
+  - 12
+  - 89
+  - 86
+  bbox_world:
+  - - -4.825
+    - 0.175
+  - - -1.025
+    - 3.875
+  polygon_world:
+  - - -4.825
+    - 3.875
+  - - -4.825
+    - 0.175
+  - - -1.325
+    - 0.175
+  - - -1.325
+    - 1.375
+  - - -1.025
+    - 1.375
+  - - -1.025
+    - 0.925
+  - - -1.025
+    - 3.875
+  - - -1.075
+    - 2.625
+  - - -1.325
+    - 2.675
+  - - -1.325
+    - 3.875
+- id: B
+  name: Phòng thí nghiệm
+  aliases:
+  - khu vực b
+  - khu vuc b
+  - phòng b
+  - phong b
+  - phòng thí nghiệm
+  - phong thi nghiem
+  - lab
+  - phòng lab
+  - phong lab
+  pixel_goal:
+  - 59
+  - 115
+  world_goal:
+  - -2.525
+  - -1.275
+  yaw: 0.0
+  clearance_m: 1.2
+  area_m2: 13.73
+  bbox_pixels:
+  - 13
+  - 92
+  - 97
+  - 166
+  bbox_world:
+  - - -4.825
+    - -3.825
+  - - -0.625
+    - -0.125
+  polygon_world:
+  - - -4.825
+    - -0.125
+  - - -4.825
+    - -3.825
+  - - -1.325
+    - -3.825
+  - - -1.275
+    - -2.575
+  - - -1.025
+    - -2.625
+  - - -1.025
+    - -3.825
+  - - -0.625
+    - -3.825
+  - - -0.625
+    - -1.375
+  - - -1.025
+    - -0.975
+  - - -1.025
+    - -1.325
+  - - -1.325
+    - -1.325
+  - - -1.325
+    - -0.125
+- id: HALLWAY
+  name: Hành lang
+  aliases:
+  - hành lang
+  - hanh lang
+  - sảnh
+  - sanh
+  - trạm sạc
+  - tram sac
+  - dock
+  - về sạc
+  - ve sac
+  - về dock
+  - ve dock
+  - khu trung tâm
+  pixel_goal:
+  - 110
+  - 84
+  world_goal:
+  - 0.025
+  - 0.275
+  yaw: 0.0
+  clearance_m: 1.1
+  area_m2: 17.13
+  bbox_pixels:
+  - 89
+  - 12
+  - 145
+  - 166
+  bbox_world:
+  - - -1.025
+    - -3.825
+  - - 1.775
+    - 3.875
+  polygon_world:
+  - - -0.925
+    - 3.875
+  - - -1.025
+    - -0.875
+  - - -0.525
+    - -1.375
+  - - -0.525
+    - -3.825
+  - - 1.075
+    - -3.825
+  - - 1.075
+    - -0.625
+  - - 1.775
+    - 0.175
+  - - 1.775
+    - 3.875
+  - - 1.375
+    - 3.875
+  - - 1.325
+    - 0.625
+  - - 1.075
+    - 0.675
+  - - 1.075
+    - 3.875
+- id: C
+  name: Phòng họp
+  aliases:
+  - khu vực c
+  - khu vuc c
+  - phòng c
+  - phong c
+  - phòng họp
+  - phong hop
+  - kho
+  - nhà kho
+  - nha kho
+  pixel_goal:
+  - 167
+  - 101
+  world_goal:
+  - 2.875
+  - -0.575
+  yaw: 3.14159
+  clearance_m: 1.549
+  area_m2: 23.64
+  bbox_pixels:
+  - 136
+  - 12
+  - 207
+  - 166
+  bbox_world:
+  - - 1.325
+    - -3.825
+  - - 4.875
+    - 3.875
+  polygon_world:
+  - - 1.875
+    - 3.875
+  - - 1.875
+    - 0.175
+  - - 1.325
+    - -0.575
+  - - 1.375
+    - -3.825
+  - - 4.875
+    - -3.825
+  - - 4.875
+    - 3.875
