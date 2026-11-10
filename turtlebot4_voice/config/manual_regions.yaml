@@ -1,0 +1,40 @@
+# manual_regions.yaml
+# Định nghĩa đa giác (polygon) từng vùng theo pixel (col_u, row_v) trong bản đồ office_map (220x180 px)
+# Sử dụng làm chế độ thủ công khi phân vùng hoặc làm cơ sở kiểm tra đối chiếu.
+
+regions:
+  - id: "A"
+    name: "Phòng học"
+    polygon_pixels:
+      - [12, 11]
+      - [86, 11]
+      - [86, 89]
+      - [12, 89]
+    yaw: 0.0
+
+  - id: "B"
+    name: "Phòng thí nghiệm"
+    polygon_pixels:
+      - [12, 89]
+      - [86, 89]
+      - [86, 168]
+      - [12, 168]
+    yaw: 0.0
+
+  - id: "HALLWAY"
+    name: "Hành lang"
+    polygon_pixels:
+      - [86, 11]
+      - [134, 11]
+      - [134, 168]
+      - [86, 168]
+    yaw: 0.0
+
+  - id: "C"
+    name: "Phòng họp"
+    polygon_pixels:
+      - [134, 11]
+      - [208, 11]
+      - [208, 168]
+      - [134, 168]
+    yaw: 3.14159

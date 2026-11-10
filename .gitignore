@@ -4,16 +4,20 @@ install/
 log/
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # Excluded per user request
-image/
-image
-images/
-docs/images/
 report/
+docs/
+*.pdf
 
-# Media binaries
-*.png
+# Media binaries except maps
 *.jpg
 *.jpeg
-*.pdf
+*.png
+!turtlebot4_voice/maps/*.png
+
+# System files
+.DS_Store
+*.swp
+*~

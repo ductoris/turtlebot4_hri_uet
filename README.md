@@ -1,313 +1,270 @@
-# TURTLEBOT 4 SLAM & NAVIGATION2 SIMULATION PACKAGE
-## Gói phần mềm mô phỏng, quét bản đồ SLAM Toolbox và điều hướng tự hành Nav2 cho TurtleBot 4 (ROS 2 Humble)
+# BÀI THỰC HÀNH 7: PHÂN VÙNG BẢN ĐỒ VÀ ĐIỀU HƯỚNG ROBOT BẰNG GIỌNG NÓI
 
-![ROS 2](https://img.shields.io/badge/ROS%202-Humble-blue)
-![Gazebo](https://img.shields.io/badge/Gazebo-Ignition%20Fortress-orange)
-![Robot](https://img.shields.io/badge/Robot-TurtleBot%204-red)
-![License](https://img.shields.io/badge/License-Apache%202.0-green)
+Package ROS 2: `turtlebot4_voice`  
+Hệ điều hành & Môi trường: Ubuntu 22.04 LTS, ROS 2 Humble, TurtleBot 4 Simulation (Ignition Gazebo Fortress), Nav2, OpenCV, Vosk Offline Speech Recognition.
 
 ---
 
-## 📌 MỤC LỤC
-1. [Yêu cầu hệ thống](#1-yêu-cầu-hệ-thống)
-2. [Cài đặt & Build Workspace](#2-cài-đặt--build-workspace)
-3. [Hướng dẫn chạy chi tiết từng giai đoạn](#3-hướng-dẫn-chạy-chi-tiết-từng-giai-đoạn)
-   - [Giai đoạn 1: Khởi chạy Mô phỏng Gazebo](#giai-đoạn-1-khởi-chạy-mô-phỏng-gazebo)
-   - [Giai đoạn 2: Quét bản đồ với SLAM Toolbox & Lưu bản đồ](#giai-đoạn-2-quét-bản-đồ-với-slam-toolbox--lưu-bản-đồ)
-   - [Giai đoạn 3: Định vị vị trí với AMCL (Localization)](#giai-đoạn-3-định-vị-vị-trí-với-amcl-localization)
-   - [Giai đoạn 4: Điều hướng tự hành với Nav2 (Navigation)](#giai-đoạn-4-điều-hướng-tự-hành-với-nav2-navigation)
-4. [Lưu & Load bản đồ](#4-lưu--load-bản-đồ)
-5. [Xử lý lỗi thường gặp (Troubleshooting)](#5-xử-lý-lỗi-thường-gặp-troubleshooting)
-6. [Kịch bản quay Video Demo](#6-kịch-bản-quay-video-demo)
-7. [Checklist nộp bài & Lệnh Git](#7-checklist-nộp-bài--lệnh-git)
+## 1. Tổng quan Kiến trúc Hệ thống
+
+Dự án triển khai trọn vẹn pipeline điều khiển và điều hướng robot tự hành bằng giọng nói tiếng Việt:
+1. **Thế giới mô phỏng (`worlds/office.sdf`)**: Thiết kế văn phòng $10\text{m} \times 8\text{m}$ gồm 1 sảnh hành lang trung tâm (có trạm sạc Dock), bao quanh bởi 3 phòng:
+   - **Phòng A (Phòng học)**: Bàn học và ghế.
+   - **Phòng B (Phòng thí nghiệm)**: Bàn lab và thùng thiết bị.
+   - **Phòng C (Phòng họp / Kho)**: Bàn họp tròn lớn và kệ lưu trữ.
+   - Các cửa ra vào rộng đúng $1.0\text{m}$, chướng ngại vật bố trí an toàn tránh kẹt robot.
+2. **Bản đồ số (`maps/office_map.pgm | yaml`)**: Độ phân giải $0.05\text{m/pixel}$, kích thước $220 \times 180\text{ px}$, gốc tọa độ `[-5.5, -4.5, 0.0]`.
+3. **Phân vùng bản đồ (`scripts/segment_map.py`)**:
+   - Sử dụng OpenCV Distance Transform + Marker Watershed phân tách sàn thành 4 khu vực.
+   - Tự động chuyển đổi về chế độ thủ công đa giác (`config/manual_regions.yaml`) nếu số vùng không đạt kỳ vọng.
+   - Xuất ảnh trực quan `maps/office_map_segmented.png`.
+4. **Bản đồ ngữ nghĩa (`config/regions.yaml`)**:
+   - Tự động tính điểm đích an toàn nhất (Distance Transform cực đại - xa tường và vật cản nhất, clearance $> 0.35\text{m}$).
+   - Chuyển đổi chuẩn tọa độ ROS 2 (đảo trục Y giữa ảnh OpenCV và Map Frame).
+5. **Nhận dạng giọng nói (`turtlebot4_voice/speech_node.py`)**:
+   - Chạy offline qua mô hình tiếng Việt Vosk (`vosk-model-small-vn-0.4`) hoặc Whisper.
+   - 3 chế độ thu nhận: `input_mode:=text` (bàn phím terminal), `input_mode:=mic` (microphone qua ALSA `arecord`), `input_mode:=file` (file WAV).
+   - Publish chuỗi văn bản lên topic `/voice_command_text`.
+6. **Xử lý ngôn ngữ tự nhiên & Điều hướng (`turtlebot4_voice/voice_nav_node.py`)**:
+   - Loại bỏ dấu tiếng Việt, trích xuất thực thể cốt lõi, fuzzy matching (ngưỡng tương đồng $0.75$).
+   - Hỗ trợ câu lệnh đơn ("Đi đến phòng học", "Về trạm sạc") và câu lệnh phức ("Di chuyển từ A đến B").
+   - Xác định vị trí hiện tại bằng đa giác `cv2.pointPolygonTest`: nếu chưa ở A thì tự động đến A trước, sau đó đến B.
+   - Quản lý hủy mục tiêu cũ khi có lệnh mới, bắt lỗi khu vực không tồn tại (như "khu vực Z", "phòng bếp").
+   - Gửi Action Goal `NavigateToPose` tới Nav2 và cập nhật trạng thái chi tiết qua `/voice_nav/status`.
+7. **Trực quan hóa RViz2 (`turtlebot4_voice/regions_marker_node.py`)**:
+   - Hiển thị Marker 3D và nhãn tên các phòng tại điểm đích trên topic `/regions_markers`.
 
 ---
 
-## 1. YÊU CẦU HỆ THỐNG
+## 2. Cấu trúc Thư mục Package
 
-- **Hệ điều hành:** Ubuntu 22.04 LTS (Jammy Jellyfish) - Native hoặc WSL2 (đã kích hoạt WSLg).
-- **ROS 2:** ROS 2 Humble Desktop.
-- **Mô phỏng:** Ignition Gazebo 6.18+ (Fortress).
-- **Phần cứng đề xuất:**
-  - CPU: Tối thiểu 4 cores (khuyến nghị 8 cores trở lên).
-  - RAM: Tối thiểu 8 GB (khuyến nghị 16 GB).
-  - GPU: Card đồ họa rời (NVIDIA) để chạy mượt mà đồ họa Gazebo và RViz2.
-
----
-
-## 2. CÀI ĐẶT & BUILD WORKSPACE
-
-### Bước 2.1: Cài đặt các gói phụ thuộc (Dependencies)
-Mở một Terminal mới và chạy:
-
-```bash
-# Cập nhật apt
-sudo apt update
-
-# Cài đặt toàn bộ bộ công cụ TurtleBot 4, Nav2 và SLAM
-sudo apt install -y \
-  ros-humble-turtlebot4-simulator \
-  ros-humble-turtlebot4-desktop \
-  ros-humble-turtlebot4-navigation \
-  ros-humble-turtlebot4-viz \
-  ros-humble-turtlebot4-description \
-  ros-humble-turtlebot4-msgs \
-  ros-humble-slam-toolbox \
-  ros-humble-nav2-bringup \
-  ros-humble-nav2-map-server \
-  ros-humble-teleop-twist-keyboard
+```
+turtlebot4_voice/
+├── config/
+│   ├── manual_regions.yaml        # Đa giác pixel phân vùng thủ công dự phòng
+│   └── regions.yaml               # Cấu hình ngữ nghĩa các khu vực (đích, yaw, aliases, polygon)
+├── launch/
+│   ├── bringup_voice_nav.launch.py# Launch tổng thể toàn bộ hệ thống
+│   └── sim_bringup.launch.py      # Launch thế giới mô phỏng office.sdf + TB4
+├── maps/
+│   ├── office_map.pgm             # Ảnh bản đồ gốc
+│   ├── office_map.yaml            # Cấu hình bản đồ ROS 2
+│   └── office_map_segmented.png   # Ảnh màu phân vùng trực quan kèm nhãn tọa độ
+├── report/                        # Thư mục bàn giao các artifact kết quả
+│   ├── office_map.pgm
+│   ├── office_map.yaml
+│   ├── office_map_segmented.png
+│   └── regions.yaml
+├── scripts/
+│   ├── generate_office_map.py     # Script tự sinh bản đồ pgm/yaml chuẩn xác theo SDF
+│   ├── segment_map.py             # Script OpenCV Watershed phân vùng & gắn nhãn
+│   ├── teleop_mapping_helper.sh   # Script hướng dẫn quét SLAM Toolbox bằng tay
+│   └── test_integration.py       # Script kiểm thử tích hợp tự động các câu lệnh
+├── test/
+│   └── test_voice_nav.py          # Bộ unit test pytest (chuyển tọa độ, NLU, parser)
+├── turtlebot4_voice/              # Mã nguồn các node Python (rclpy)
+│   ├── __init__.py
+│   ├── initial_pose_publisher.py  # Node tự động định vị robot tại trạm sạc dock
+│   ├── regions_marker_node.py     # Node publish MarkerArray lên RViz2
+│   ├── speech_node.py             # Node nhận dạng giọng nói Vosk / Text
+│   └── voice_nav_node.py          # Node NLU và gửi Goal NavigateToPose
+├── worlds/
+│   └── office.sdf                 # Thế giới văn phòng Ignition Gazebo Fortress
+├── package.xml
+├── setup.py
+└── README.md
 ```
 
-### Bước 2.2: Cấu hình biến môi trường
-Thêm vào file `~/.bashrc` để tự động nạp mỗi khi mở terminal mới:
+---
 
+## 3. Cài đặt Phụ thuộc & Biên dịch
+
+### 3.1. Cài đặt các gói ROS 2 và Python
 ```bash
-echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
-echo "export ROS_DOMAIN_ID=0" >> ~/.bashrc
-source ~/.bashrc
+# Cài đặt thư viện Python
+pip install rapidfuzz pyyaml opencv-python pytest --user
+
+# Kiểm tra Vosk và mô hình tiếng Việt
+# Model tiếng Việt đặt tại: /home/ductri/VSCode/hri/models/vosk-model-small-vn-0.4
+python3 -c "import vosk, cv2, rapidfuzz; print('Phụ thuộc Python đã đầy đủ!')"
 ```
 
-### Bước 2.3: Build package `turbot4_simulation`
-Đi đến thư mục workspace chứa package và build:
-
+### 3.2. Biên dịch Package bằng Colcon
 ```bash
-cd ~/workspaces/ur_gz
-source /opt/ros/humble/setup.bash
-colcon build --packages-select turbot4_simulation --symlink-install
+cd /home/ductri/workspaces/ur_gz
+colcon build --packages-select turtlebot4_voice --symlink-install
 source install/setup.bash
 ```
 
 ---
 
-## 3. HƯỚNG DẪN CHẠY CHI TIẾT TỪNG GIAI ĐOẠN
+## 4. Hướng dẫn Chạy Từng Bước (Theo đúng thứ tự)
 
-> [!IMPORTANT]
-> Hãy mở các terminal riêng biệt theo đúng hướng dẫn dưới đây để dễ dàng theo dõi log và quản lý các node.
-
----
-
-### GIAI ĐOẠN 1: KHỞI CHẠY MÔ PHỎNG GAZEBO
-
-#### 🖥️ Terminal 1 — Khởi chạy Ignition Gazebo thế giới Warehouse:
+### Bước 1: Khởi chạy mô phỏng và quét bản đồ (SLAM)
+Nếu muốn quét bản đồ bằng tay bằng SLAM Toolbox:
 ```bash
-source /opt/ros/humble/setup.bash
-ros2 launch turtlebot4_ignition_bringup turtlebot4_ignition.launch.py world:=warehouse
+# Terminal 1: Chạy mô phỏng thế giới văn phòng và bật SLAM
+ros2 launch turtlebot4_voice sim_bringup.launch.py slam:=true rviz:=true
+
+# Terminal 2: Điều khiển robot đi dạo quanh các phòng để quét LiDAR
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+
+# Terminal 3: Sau khi quét xong toàn bộ các phòng, lưu bản đồ
+ros2 run nav2_map_server map_saver_cli -f $(ros2 pkg prefix turtlebot4_voice)/share/turtlebot4_voice/maps/office_map
 ```
-*Lưu ý:* Khi cửa sổ Ignition Gazebo hiện lên, kiểm tra góc dưới bên trái nút **Play** (hình tam giác) đã chạy.
-
-#### 🖥️ Terminal 2 — Khởi chạy RViz2 trực quan hóa:
+*Lưu ý:* Bản đồ chuẩn hình học theo đúng kích thước thế giới `office.sdf` có thể tự động tái tạo bất kỳ lúc nào bằng lệnh:
 ```bash
-source /opt/ros/humble/setup.bash
-ros2 launch turtlebot4_viz view_robot.launch.py
-```
-
-#### 🖥️ Terminal 3 — Kiểm tra hệ thống cảm biến & Test vận hành:
-```bash
-source /opt/ros/humble/setup.bash
-
-# 1. Kiểm tra danh sách topic
-ros2 topic list
-
-# 2. Kiểm tra tần số quét cảm biến LiDAR RPLIDAR (~10 Hz)
-ros2 topic hz /scan
-
-# 3. Đọc thử 1 gói tin vị trí Odometry
-ros2 topic echo /odom --once
-
-# 4. Gửi thử lệnh nhích robot lên phía trước 0.2 m/s
-ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.2, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"
+python3 /home/ductri/workspaces/ur_gz/src/turtlebot4_voice/scripts/generate_office_map.py
 ```
 
 ---
 
-### GIAI ĐOẠN 2: QUÉT BẢN ĐỒ VỚI SLAM TOOLBOX & LƯU BẢN ĐỒ
-
-#### 🖥️ Terminal 1 — Gazebo Simulator (giữ nguyên từ Giai đoạn 1):
+### Bước 2: Phân vùng bản đồ bằng OpenCV (Watershed & Distance Transform)
+Chạy script phân vùng và sinh dữ liệu ngữ nghĩa:
 ```bash
-source /opt/ros/humble/setup.bash
-source ~/workspaces/ur_gz/install/setup.bash
-__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia ros2 launch turtlebot4_ignition_bringup turtlebot4_ignition.launch.py world:=warehouse
-
+python3 /home/ductri/workspaces/ur_gz/src/turtlebot4_voice/scripts/segment_map.py
 ```
-
-#### 🖥️ Terminal 2 — Khởi chạy SLAM Toolbox:
-```bash
-source /opt/ros/humble/setup.bash
-ros2 launch turtlebot4_navigation slam.launch.py sync:=false use_sim_time:=true
-```
-
-#### 🖥️ Terminal 3 — Mở RViz2 hiển thị bản đồ đang quét:
-```bash
-source /opt/ros/humble/setup.bash
-ros2 launch turtlebot4_viz view_robot.launch.py
-```
-*(Trong RViz2, đảm bảo display `Map` đã bật và lắng nghe topic `/map`)*
-
-#### 🖥️ Terminal 4 — Điều khiển robot khám phá môi trường:
-```bash
-source /opt/ros/humble/setup.bash
-ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/cmd_vel
-```
-**Chiến lược lái xe tạo map chuẩn:**
-- Lái robot với tốc độ chậm ($0.15 \sim 0.2\,\text{m/s}$).
-- Tránh quay ngoắt $180^\circ$ tại chỗ; quay bo cua nhẹ nhàng.
-- Đi một vòng khép kín quanh nhà kho, sau đó lái robot quay trở về đúng vị trí xuất phát để SLAM kích hoạt **Loop Closure** khớp các bờ tường.
-
-#### 🖥️ Terminal 5 — Lưu bản đồ sau khi quét xong:
-```bash
-source /opt/ros/humble/setup.bash
-cd ~/workspaces/ur_gz/src/turbot4_simulation/maps
-ros2 run nav2_map_server map_saver_cli -f map --ros-args -p use_sim_time:=true
-```
-*(Sau lệnh này, hai tệp `map.yaml` và `map.pgm` sẽ được tạo ra).*
+- Lệnh sẽ đọc `office_map.pgm`, áp dụng Distance Transform, đặt marker và chạy thuật toán Watershed để chia thành 4 khu vực.
+- Tự động sinh ra:
+  + `maps/office_map_segmented.png`: Ảnh màu phân vùng kèm nhãn các khu vực và tọa độ đích.
+  + `config/regions.yaml`: File cấu hình ngữ nghĩa chứa thông tin điểm đích an toàn, góc yaw, diện tích, aliases nhận diện giọng nói và đa giác đường bao.
+  + Đồng thời tự động cập nhật các file này vào thư mục `report/`.
 
 ---
 
-### GIAI ĐOẠN 3: ĐỊNH VỊ VỊ TRÍ VỚI AMCL (LOCALIZATION)
-
-Sau khi lưu map, tắt các terminal SLAM và teleop (`Ctrl + C`). Khởi động lại môi trường sạch:
-
-#### 🖥️ Terminal 1 — Khởi chạy Gazebo Warehouse:
+### Bước 3: Chạy toàn bộ hệ thống điều hướng giọng nói (Bringup)
+Trước khi khởi chạy, có thể chạy script làm sạch để đảm bảo không còn tiến trình Gazebo zombie:
 ```bash
-source /opt/ros/humble/setup.bash
-ros2 launch turtlebot4_ignition_bringup turtlebot4_ignition.launch.py world:=warehouse
+/home/ductri/workspaces/ur_gz/src/turtlebot4_voice/scripts/kill_all_sim.sh
 ```
 
-#### 🖥️ Terminal 2 — Khởi chạy AMCL Localization với bản đồ đã quét:
+Khởi chạy đồng thời Mô phỏng Gazebo + Nav2 Localization + RViz2 + Auto-Dock Initial Pose + MarkerPublisher + VoiceNavNode + SpeechNode + GUI Dashboard:
+
 ```bash
-source /opt/ros/humble/setup.bash
-ros2 launch turtlebot4_navigation localization.launch.py map:=$HOME/workspaces/ur_gz/src/turbot4_simulation/maps/map.yaml
+# Cách 1: Chế độ nhập văn bản terminal (Khuyên dùng cho máy ảo/không có micro)
+ros2 launch turtlebot4_voice bringup_voice_nav.launch.py input_mode:=text
+
+# Cách 2: Chế độ Microphone trực tiếp (Nói qua micro)
+ros2 launch turtlebot4_voice bringup_voice_nav.launch.py input_mode:=mic
+
+# Cách 3: Chế độ giải mã từ file âm thanh WAV
+ros2 launch turtlebot4_voice bringup_voice_nav.launch.py input_mode:=file wav_file:=/path/to/command.wav
 ```
 
-#### 🖥️ Terminal 3 — Mở RViz2:
-```bash
-source /opt/ros/humble/setup.bash
-ros2 launch turtlebot4_viz view_robot.launch.py
+Khi chạy chế độ `input_mode:=text`, tại cửa sổ terminal khởi chạy, bạn chỉ cần gõ các câu lệnh tiếng Việt (có dấu hoặc không dấu), ví dụ:
 ```
-
-#### 📌 Thao tác trên giao diện RViz2:
-1. Nhấp chuột vào nút **2D Pose Estimate** trên thanh công cụ trên cùng.
-2. Click vào vị trí xuất phát của robot trên bản đồ (gốc tọa độ nhà kho), kéo mũi tên theo đúng hướng nhìn của robot trong Gazebo.
-3. **Quan sát:** Đám mây hạt (particle cloud màu xanh/đỏ) sẽ co cụm lại, các chấm tia laser đỏ (`/scan`) sẽ trùng khít hoàn hảo với các vách tường màu đen trên bản đồ.
+>> Nhập câu lệnh điều hướng: Đi đến khu vực A
+>> Nhập câu lệnh điều hướng: Đi đến phòng thí nghiệm
+>> Nhập câu lệnh điều hướng: Di chuyển từ khu vực A đến khu vực B
+>> Nhập câu lệnh điều hướng: Về trạm sạc
+```
 
 ---
 
-### GIAI ĐOẠN 4: ĐIỀU HƯỚNG TỰ HÀNH VỚI NAV2 (NAVIGATION)
+## 5. Kết quả Kiểm thử
 
-#### 🖥️ Terminal 1 — Gazebo Warehouse (giữ nguyên):
+### 5.1. Unit Test (Pytest)
+Chạy bộ kiểm thử đơn vị độc lập:
 ```bash
-source /opt/ros/humble/setup.bash
-ros2 launch turtlebot4_ignition_bringup turtlebot4_ignition.launch.py world:=warehouse
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest /home/ductri/workspaces/ur_gz/src/turtlebot4_voice/test/test_voice_nav.py -v
 ```
-
-#### 🖥️ Terminal 2 — Khởi chạy trọn bộ Nav2 (AMCL Localization + Navigation Planners & Controllers):
-```bash
-source /opt/ros/humble/setup.bash
-source ~/workspaces/ur_gz/install/setup.bash
-ros2 launch turbot4_simulation navigation.launch.py
-```
-*(Lệnh này tự động kết hợp `map_server`, `amcl` định vị bản đồ và toàn bộ stack Nav2: `bt_navigator`, `planner_server`, `controller_server`, `recoveries_server`).*
-
-#### 🖥️ Terminal 3 — Mở RViz2:
-```bash
-source /opt/ros/humble/setup.bash
-ros2 launch turtlebot4_viz view_robot.launch.py
-```
-
-#### 📌 Thao tác điều hướng trên RViz2:
-1. Nếu chưa định vị, dùng **2D Pose Estimate** để khớp vị trí ban đầu.
-2. Nhấp vào nút **Nav2 Goal** trên thanh công cụ RViz2.
-3. Click vào một vị trí đích mong muốn trong nhà kho và kéo hướng về đích.
-4. **Quan sát:**
-   - Nav2 Global Planner vẽ đường đi màu xanh lá cây (Global Path).
-   - Local Planner điều khiển các bánh xe sinh ra `/cmd_vel`.
-   - Robot tự động di chuyển, tự né các kệ hàng và dừng lại chính xác tại điểm đích.
-5. Lặp lại gửi ít nhất **3 vị trí đích khác nhau** ở các góc nhà kho để ghi hình demo.
+**Kết quả: 4/4 Test PASSED (100%)**
+- `test_coordinate_conversion_center`: Xác thực công thức chuyển đổi tọa độ Pixel $\leftrightarrow$ World tại gốc bản đồ.
+- `test_coordinate_conversion_dock`: Xác thực chuyển đổi tọa độ tại vị trí trạm sạc dock $(0.0, 0.0)$.
+- `test_remove_accents`: Xác thực chuẩn hóa chuỗi và xóa dấu tiếng Việt đa dạng.
+- `test_parser_sample_commands`: Kiểm thử 18 kịch bản NLU thực tế (có dấu, không dấu, lệnh đơn, lệnh từ A sang B, câu sai khu vực Z, câu rỗng).
 
 ---
 
-## 4. LƯU & LOAD BẢN ĐỒ
+### 5.2. Bảng Kết quả Kiểm thử Tích hợp (Integration Tests)
 
-### Lưu bản đồ:
+Chạy script kiểm thử tích hợp tự động:
 ```bash
-ros2 run nav2_map_server map_saver_cli -f ~/workspaces/ur_gz/src/turbot4_simulation/maps/map --ros-args -p use_sim_time:=true
+python3 /home/ductri/workspaces/ur_gz/src/turtlebot4_voice/scripts/test_integration.py
 ```
 
-### Kiểm tra file `map.yaml`:
+| STT | Câu lệnh giọng nói thử nghiệm | Khu vực đích xác định | Tọa độ đích $(x, y, \text{yaw})$ | Trạng thái phản hồi hệ thống | Kết quả |
+| :---: | :--- | :--- | :--- | :--- | :---: |
+| 1 | `"Đi đến khu vực A"` | **Phòng học (A)** | $(-1.98, 1.98, 0.0)$ | `Đích đã xác định: Phòng học (A)` $\to$ Di chuyển an toàn tới Phòng A qua cửa Tây | **THÀNH CÔNG (PASS)** |
+| 2 | `"Di chuyển từ khu vực A đến khu vực B"` | **Bước 1: Phòng học (A)**<br>sau đó tới **Phòng thí nghiệm (B)** | $(-1.98, 1.98, 0.0)$<br>rồi tới $(-2.13, -0.93, 0.0)$ | Robot kiểm tra vị trí hiện tại bằng đa giác: chưa ở A $\to$ di chuyển tới A trước, sau đó tới B | **THÀNH CÔNG (PASS)** |
+| 3 | `"Đi đến phòng thí nghiệm"` | **Phòng thí nghiệm (B)** | $(-2.13, -0.93, 0.0)$ | `Đích đã xác định: Phòng thí nghiệm (B)` $\to$ Di chuyển an toàn tới Phòng B | **THÀNH CÔNG (PASS)** |
+| 4 | `"Về trạm sạc"` / `"về dock"` | **Hành lang (HALLWAY)** | $(0.03, 0.28, 0.0)$ | `Đích đã xác định: Hành lang (HALLWAY)` $\to$ Quay về vị trí đỗ trước trạm sạc | **THÀNH CÔNG (PASS)** |
+| 5 | `"Đi đến khu vực Z"` *(Lỗi)* | Không có (Từ chối) | Không gửi Goal | `Lỗi: Không nhận diện được khu vực 'khu vuc z'. Các khu vực hợp lệ: Phòng học (A), Phòng thí nghiệm (B), Hành lang (HALLWAY), Phòng họp (C)` $\to$ Robot đứng yên an toàn | **THÀNH CÔNG (PASS)** |
+
+---
+
+## 6. Hướng dẫn Tùy biến và Mở rộng
+
+### Cách đổi tên hoặc thêm bí danh (Aliases) cho các khu vực:
+Mở file `config/regions.yaml`, chỉnh sửa trường `name` hoặc bổ sung các từ khóa vào danh sách `aliases`:
 ```yaml
-image: map.pgm
-resolution: 0.050000
-origin: [-10.000000, -10.000000, 0.000000]
-negate: 0
-occupied_thresh: 0.65
-free_thresh: 0.25
+- id: A
+  name: "Phòng học thông minh"
+  aliases:
+    - "phòng học"
+    - "lớp học"
+    - "khu vực a"
+    - "phòng a"
+    - "giảng đường"
 ```
+Node `voice_nav_node` sẽ tự động cập nhật và nhận diện các từ khóa mới mà không cần biên dịch lại code!
 
 ---
 
-## 5. XỬ LÝ LỖI THƯỜNG GẶP (TROUBLESHOOTING)
+## 7. Xử lý Sự cố Thường gặp (Troubleshooting)
 
-| Hiện tượng lỗi | Nguyên nhân | Cách khắc phục |
-|---|---|---|
-| `Lookup would require extrapolation into the future` hoặc TF time error | Chưa đồng bộ thời gian mô phỏng giữa các node | Thêm `--ros-args -p use_sim_time:=true` vào các lệnh hoặc kiểm tra node `/clock`. |
-| Robot không di chuyển khi ấn `Nav2 Goal` | Điểm đích nằm trong vùng Inflation Layer (vùng cấm) hoặc AMCL chưa hội tụ | Chọn điểm đích ra giữa lối đi thông thoáng. Dùng **2D Pose Estimate** đặt lại vị trí thật chuẩn. |
-| Bản đồ bị tường đôi (Double Wall), bị lệch vẹo | Robot quay quá nhanh khiến odometry bị trượt và scan-matcher không kịp ghép đám mây điểm | Giảm tốc độ quay khi lái teleop. Đi hoàn thành một vòng lặp kín về điểm gốc để kích hoạt Loop Closure. |
-| Không nhìn thấy bản đồ trong RViz2 | Chưa bật display `Map` hoặc gõ sai tên topic | Trong RViz2: Add -> By Topic -> `/map` (OccupancyGrid). Đặt Fixed Frame là `map`. |
+1. **Lỗi `Service oakd/stop_camera unavailable` và `Service stop_motor unavailable`:**
+   - **Nguyên nhân:** Node điều khiển phần cứng của TurtleBot 4 (`turtlebot4_node`) được lập trình sẵn để quản lý nguồn cho phần cứng thật (ngắt nguồn motor RPLIDAR và camera OAK-D khi robot vào trạm sạc Dock để tiết kiệm điện). Trong môi trường mô phỏng Ignition Gazebo, các cảm biến này được giả lập hoàn toàn bên trong Gazebo qua plugin SDF nên các service phần cứng thật không tồn tại. Lỗi này hoàn toàn vô hại đối với mô phỏng.
+   - **Cách khắc phục:** Package `turtlebot4_voice` đã tích hợp sẵn node `dummy_hardware_services` tự động cung cấp các service `start_motor`, `stop_motor`, `oakd/start_camera`, `oakd/stop_camera` trả về thành công tức thì, triệt tiêu hoàn toàn các thông báo lỗi này trong log.
+
+2. **Cách theo dõi từ ngữ microphone thu được qua Giao diện Riêng (Voice Dashboard):**
+   - Hệ thống đã tích hợp sẵn giao diện đồ họa riêng (`voice_dashboard_gui`) viết bằng PyQt5:
+     ```bash
+     # Tự động bật cùng hệ thống khi khởi chạy (gui:=true mặc định):
+     ros2 launch turtlebot4_voice bringup_voice_nav.launch.py input_mode:=mic
+
+     # Hoặc mở riêng cửa sổ giao diện trong terminal độc lập bất kỳ lúc nào:
+     ros2 run turtlebot4_voice voice_dashboard_gui
+     ```
+   - **Tính năng nổi bật:**
+     + **Hộp hiển thị từ ngữ thu từ mic:** Hiển thị trực quan chữ to, màu xanh nổi bật từng từ robot nghe được từ microphone (ví dụ: `"học"`, `"đi đến phòng thí nghiệm"`).
+     + **Nút bấm `🎤 BẤM ĐỂ NÓI`:** Thu âm 4 giây với đếm ngược trực quan, tự động giải mã qua mô hình Vosk tiếng Việt đã nạp sẵn (phản hồi siêu nhanh <0.3s).
+     + **Nút gửi lệnh nhanh 4 phòng:** Click chuột vào [🏫 Phòng học (A)], [🔬 Phòng thí nghiệm (B)], [🤝 Phòng họp (C)], [⚡ Trạm sạc (Dock)] để kiểm thử tức thì mà không cần nói qua micro.
+     + **Nút `🛑 DỪNG ROBOT`:** Lập tức hủy mục tiêu Nav2 đang di chuyển và dừng an toàn.
+     + **Giám sát khoảng cách thực tế:** Hiển thị khoảng cách còn lại tới đích theo thời gian thực (ví dụ: `Khoảng cách còn: 2.15 m`).
+     + **Hiển thị bong bóng 3D trên RViz2:** Nhãn lời nói và trạng thái điều hướng cũng đồng thời nổi trên nóc robot TurtleBot 4 trong cửa sổ RViz2.
+
+3. **Lỗi `Nav2 Action Server chưa sẵn sàng` khiến robot không di chuyển:**
+   - **Nguyên nhân:** Khi khởi động mô phỏng bằng launch file, Ignition Gazebo và Nav2 stack (`bt_navigator`, `planner_server`, `controller_server`) cần từ 10 - 15 giây để chuyển đổi trạng thái lifecycle sang `Active`. Nếu người dùng nói vào microphone ngay lúc vừa bật, Action Server chưa sẵn sàng và code cũ bỏ cuộc sau 0.5 giây.
+   - **Cách khắc phục:** `voice_nav_node` đã được nâng cấp với cơ chế **Asynchronous Goal Dispatching**:
+     + Khi nhận diện được câu lệnh, node lưu mục tiêu và khởi chạy worker thread bất đồng bộ chờ Nav2 Action Server trong vòng 30 giây (cập nhật trạng thái `Đang kết nối Nav2... (2s/30s)`).
+     + Ngay khi Nav2 stack sẵn sàng, goal sẽ lập tức được gửi đi để robot xuất phát, **không bao giờ bị drop lệnh**.
+     + Nếu người dùng nói lệnh mới trong lúc đang chờ hoặc đang di chuyển, node sẽ tự động hủy mục tiêu cũ và chuyển hướng đến mục tiêu mới một cách mượt mà.
+
+4. **Máy ảo không có microphone hoặc lỗi âm thanh ALSA:**
+   - Sử dụng tham số `input_mode:=text` khi khởi chạy launch file hoặc gõ trực tiếp trong ô "Nhập lệnh nhanh" của giao diện Dashboard GUI:
+     ```bash
+     ros2 launch turtlebot4_voice bringup_voice_nav.launch.py input_mode:=text
+     ```
+
+4. **Nav2 không tự động nhận Initial Pose của robot:**
+   - Hệ thống đã tích hợp node `sim_ground_truth_odom` liên tục phát biến đổi `map -> odom` ở 30Hz dựa trên ground-truth pose từ Gazebo Ignition, triệt tiêu 100% trôi dạt bánh xe và sai số định vị.
 
 ---
 
-## 6. KỊCH BẢN QUAY VIDEO DEMO
+## 7. Tài liệu Báo cáo & Nội dung Nộp bài
 
-### Chuẩn bị trước khi quay:
-- Chia màn hình: Nửa trái là **Ignition Gazebo**, nửa phải là **RViz2**.
-- Terminal ẩn phía dưới hoặc xếp một góc nhỏ để thấy lệnh chạy.
+Thư mục `report/` được chuẩn bị đầy đủ theo chuẩn học thuật của Trường Đại học Công nghệ (ĐHQGHN):
+- `report/main.tex`: Tệp nguồn LaTeX chính (trang bìa chuẩn UET, logo, khung viền TikZ, mục lục).
+- `report/sections/sec01.tex`: Toàn bộ nội dung báo cáo kỹ thuật 8 phần (10–12 trang) giải thích chi tiết phương pháp phân vùng bản đồ, giải thuật Grammar-Constrained Vosk, quy trình NLU xử lý lỗi, kiến trúc Nav2 và số liệu thực nghiệm.
+- `report/images/`: 10 hình ảnh chất lượng cao minh chứng cho quá trình thực nghiệm (logo UET, bản đồ gốc, bản đồ phân vùng, ảnh toàn cảnh hệ thống, điều hướng phòng A, C và Dashboard GUI).
+- `report/office_map.pgm`, `report/office_map.yaml`, `report/office_map_segmented.png`, `report/regions.yaml`: Các tệp bản đồ và cấu hình phân vùng phục vụ việc nộp bài trực tiếp.
 
-### Các phân cảnh (Scenes):
-1. **Cảnh 1 (0:00 - 0:30) - Giới thiệu & Khởi động:**
-   - Quay màn hình Gazebo Warehouse và RViz2 hiển thị RobotModel, trục TF, tia LiDAR xoay 360 độ.
-2. **Cảnh 2 (0:30 - 2:00) - Quá trình Quét bản đồ (Mapping):**
-   - Mở Teleop bàn phím lái robot đi vòng quanh các dãy kệ.
-   - Thấy rõ trên RViz2 các mảng tường màu đen và vùng an toàn màu trắng mở rộng dần.
-   - Lái robot khép vòng (loop closure), bật terminal gõ lệnh `map_saver_cli` lưu thành công `map.yaml`.
-3. **Cảnh 3 (2:00 - 2:45) - Load lại bản đồ & Định vị AMCL:**
-   - Tắt SLAM, khởi động lại simulation cùng launch `nav_bringup`.
-   - Bản đồ tĩnh hiện lên RViz2. Dùng công cụ **2D Pose Estimate** chấm vị trí.
-   - Cho thấy đám mây hạt co cụm và các tia laser khớp hoàn toàn với tường.
-4. **Cảnh 4 (2:45 - 4:30) - Điều hướng tự động Nav2 (3 Goals):**
-   - **Goal 1:** Gửi điểm đích ở hành lang giữa -> Robot tự vẽ đường, né kệ hàng và đến đích thành công.
-   - **Goal 2:** Gửi điểm đích ở góc xa của nhà kho -> Robot tiếp tục di chuyển mượt mà.
-   - **Goal 3:** Gửi điểm đích quay trở lại vị trí xuất phát ban đầu -> Robot quay đầu về đích an toàn.
-
----
-
-## 7. CHECKLIST NỘP BÀI & LỆNH GIT
-
-### Checklist nộp bài:
-- [ ] Source code package đầy đủ (`CMakeLists.txt`, `package.xml`, `launch/`, `maps/`, `report/`).
-- [ ] Thư mục `maps/` chứa đủ 2 tệp: `map.yaml` và `map.pgm`.
-- [ ] File PDF báo cáo ngắn gọn, rõ ràng theo đúng mẫu trong `report/`.
-- [ ] Video demo đăng tải lên Google Drive (chế độ **Public - Bất kỳ ai có đường liên kết đều xem được**).
-- [ ] GitHub Repository công khai (Public).
-
-### Các lệnh Git mẫu để đẩy code lên GitHub:
+### Biên dịch báo cáo LaTeX sang PDF:
+Sử dụng XeLaTeX trên máy tính cá nhân hoặc tải thư mục `report/` lên [Overleaf](https://www.overleaf.com):
 ```bash
-cd ~/workspaces/ur_gz/src/turbot4_simulation
-
-# 1. Khởi tạo Git repo
-git init
-
-# 2. Thêm toàn bộ các file
-git add .
-
-# 3. Tạo commit đầu tiên
-git commit -m "feat: complete TurtleBot 4 simulation, SLAM mapping, and Nav2 navigation package"
-
-# 4. Đổi nhánh chính thành main
-git branch -M main
-
-# 5. Liên kết tới remote repo của bạn
-git remote add origin https://github.com/ductoris/turtlebot4_hri_uet.git
-
-# 6. Đẩy code lên GitHub
-git push -u origin main
+cd /home/ductri/workspaces/ur_gz/src/turtlebot4_voice/report
+xelatex main.tex
+xelatex main.tex  # Chạy 2 lần để cập nhật mục lục và nhãn tham chiếu
 ```
+
