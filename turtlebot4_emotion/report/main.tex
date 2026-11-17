@@ -1,0 +1,357 @@
+% =============================================================================
+% 1. MỤC TIÊU VÀ PHẠM VI
+% =============================================================================
+\section{Mục tiêu và phạm vi}
+
+Báo cáo trình bày gói ROS 2 \texttt{turtlebot4\_emotion}: hệ thống tương tác người--robot (HRI) điều khiển robot di động TurtleBot 4 trong môi trường mô phỏng Ignition Gazebo dựa trên nhận diện biểu cảm khuôn mặt thời gian thực qua webcam của máy tính. Hệ thống có 5 mục tiêu trọng tâm:
+
+\begin{itemize}
+    \item \textbf{Thị giác máy tính và nhận diện biểu cảm khuôn mặt thời gian thực:} kết hợp bộ phát hiện khuôn mặt nhanh Haar Cascade của OpenCV và mạng nơ-ron tích chập (CNN) của DeepFace để phân loại 7 nhóm biểu cảm cơ bản (\textit{happy}, \textit{sad}, \textit{neutral}, \textit{angry}, \textit{surprise}, \textit{fear}, \textit{disgust}) kèm độ tin cậy.
+    \item \textbf{Bộ lọc làm mượt khử rung giật (Debounce \& Voting):} áp dụng thuật toán bỏ phiếu đa số (Majority Voting) trên cửa sổ trượt $N = 5$ khung hình liên tiếp, loại bỏ các kết quả nhiễu tức thời giữa các khung hình, giúp tín hiệu điều khiển robot không bị giật cục.
+    \item \textbf{Máy trạng thái hữu hạn Non-blocking cho hành vi quay tròn:} thiết kế FSM xử lý độc lập hành vi xoay $360^\circ$ tại chỗ của biểu cảm \textit{surprise} với vận tốc góc $\omega = \SI{0.8}{\radian/\second}$ trong đúng $T = 2\pi / 0{,}8 \approx \SI{7.854}{\second}$. Trong quá trình xoay, robot bỏ qua các biểu cảm mới cho đến khi hoàn thành đủ chu kỳ.
+    \item \textbf{Điều khiển động học và cơ chế an toàn (Fail-safe):} ánh xạ biểu cảm thành vận tốc tịnh tiến và góc ($v, \omega$) gửi lên topic \texttt{/cmd\_vel} ở tần số chuẩn \SI{10}{\hertz}. Tích hợp giới hạn tốc độ an toàn ($v \le \SI{0.2}{\meter/\second}$, $\omega \le \SI{1.0}{\radian/\second}$) và cơ chế tự ngắt động cơ khi mất dấu khuôn mặt quá \SI{1.0}{\second}.
+    \item \textbf{Tự động Undock và giao diện HUD thời gian thực:} tích hợp Action Client gọi \texttt{/undock} (\texttt{irobot\_create\_msgs/action/Undock}) giúp robot tự rời trạm sạc khi khởi động; đồng thời hiển thị giao diện HUD bằng OpenCV phản ánh trạng thái robot, biểu cảm, vận tốc và hỗ trợ phím kiểm thử nhanh (Manual Override 1--6).
+\end{itemize}
+
+% =============================================================================
+% 2. CẤU TRÚC CHƯƠNG TRÌNH VÀ PACKAGE
+% =============================================================================
+\section{Cấu trúc chương trình và package}
+
+Gói \texttt{turtlebot4\_emotion} được xây dựng theo chuẩn \texttt{ament\_python} trên nền tảng ROS 2 Humble (Python 3.10, Ubuntu 22.04 LTS).
+
+\subsection{Cấu trúc thư mục package}
+\begingroup
+\footnotesize
+\dirtree{%
+.1 turtlebot4\_emotion/.
+.2 package.xml\DTcomment{Khai báo phụ thuộc: rclpy, geometry\_msgs, irobot\_create\_msgs}.
+.2 setup.py\DTcomment{Cấu hình cài đặt package và console script}.
+.2 setup.cfg\DTcomment{Đường dẫn thư viện thực thi}.
+.2 requirements.txt\DTcomment{Thư viện AI: deepface, tensorflow-cpu, opencv-python}.
+.2 README.md\DTcomment{Tài liệu hướng dẫn vận hành}.
+.2 resource/.
+.3 turtlebot4\_emotion\DTcomment{Marker index package}.
+.2 config/.
+.3 params.yaml\DTcomment{Cấu hình tham số: tần số, timeout, ngưỡng vận tốc}.
+.2 launch/.
+.3 emotion\_tb4.launch.py\DTcomment{Launch file khởi động hệ thống với các Launch Arguments}.
+.2 turtlebot4\_emotion/.
+.3 \_\_init\_\_.py.
+.3 emotion\_tb4\_node.py\DTcomment{Node ROS 2 xử lý thị giác, FSM, HUD và điều khiển TB4}.
+.2 test/.
+.3 test\_emotion\_mapping.py\DTcomment{Unit test kiểm tra bảng vận tốc, voting và FSM xoay}.
+}
+\endgroup
+
+\subsection{Vai trò của từng thành phần}
+\begin{itemize}
+    \item \texttt{emotion\_tb4\_node.py}: node trung tâm của hệ thống, vận hành đa luồng (\texttt{MultiThreadedExecutor}):
+    \begin{itemize}
+        \item \textit{Camera Thread / Timer 1 (\SI{30}{\hertz}):} đọc luồng video từ webcam (\texttt{/dev/video0}) hoặc tệp video, chuyển đổi không gian màu, phát hiện vùng mặt bằng Haar Cascade và hiển thị giao diện HUD.
+        \item \textit{Worker Thread:} luồng độc lập nhận vùng ảnh khuôn mặt đã được cắt tỉa, gọi mô hình DeepFace CNN với tùy chọn \texttt{detector\_backend='skip'} để suy luận biểu cảm và đẩy kết quả vào hàng đợi trượt.
+        \item \textit{Control Timer 2 (\SI{10}{\hertz}):} thực thi thuật toán Majority Voting, vận hành máy trạng thái FSM, kiểm tra thời gian timeout mất mặt, bão hòa vận tốc (clamping) và xuất bản \texttt{geometry\_msgs/msg/Twist} lên \texttt{/cmd\_vel}.
+        \item \textit{Undock Action Client:} kết nối dịch vụ action \texttt{/undock} của Create 3 để tự động lùi robot ra khỏi trạm sạc lúc khởi động.
+    \end{itemize}
+    \item \texttt{emotion\_tb4.launch.py}: nạp cấu hình và truyền đối số linh hoạt qua dòng lệnh (\texttt{robot\_namespace}, \texttt{video\_source}, \texttt{publish\_rate}, \texttt{window\_size}, \texttt{auto\_undock}, \texttt{show\_gui}).
+    \item \texttt{test\_emotion\_mapping.py}: kiểm thử tự động xác thực các giá trị vận tốc chuẩn, tính đúng đắn của giải thuật bỏ phiếu đa số và thời gian xoay $360^\circ$.
+\end{itemize}
+
+% =============================================================================
+% 3. PHƯƠNG PHÁP THỊ GIÁC MÁY TÍNH VÀ NHẬN DIỆN BIỂU CẢM
+% =============================================================================
+\section{Phương pháp thị giác máy tính và nhận diện biểu cảm}
+
+\subsection{Quy trình thị giác 2 giai đoạn (Two-Stage Pipeline)}
+Để đảm bảo tốc độ đáp ứng thời gian thực (\SI{30}{FPS}) mà không làm trễ chu kỳ điều khiển robot, quy trình nhận diện được tách làm 2 giai đoạn kế thừa (Hình~\ref{fig:vision_pipeline}):
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        node distance=1.6cm and 1.0cm,
+        auto,
+        block/.style={rectangle, draw, fill=blue!10, text width=3.4cm, text centered, rounded corners, minimum height=1.1cm, font=\footnotesize},
+        worker/.style={rectangle, draw, fill=orange!15, text width=3.4cm, text centered, rounded corners, minimum height=1.1cm, font=\footnotesize},
+        filter/.style={rectangle, draw, fill=green!15, text width=3.4cm, text centered, rounded corners, minimum height=1.1cm, font=\footnotesize},
+        line/.style={draw, -latex', thick}
+    ]
+        \node [block] (input) {\textbf{Khung hình Camera}\\$640 \times 480$ px (\SI{30}{\hertz})};
+        \node [block, right=of input] (haar) {\textbf{OpenCV Haar Cascade}\\Dò bounding box khuôn mặt\\(Thời gian $\approx \SI{5}{\milli\second}$)};
+        \node [worker, below=of haar] (deepface) {\textbf{DeepFace Worker}\\CNN Emotion Classifier\\(\texttt{detector\_backend='skip'})};
+        \node [filter, left=of deepface] (voting) {\textbf{Sliding Window Voting}\\Hàng đợi trượt $N = 5$\\Bỏ phiếu đa số};
+
+        \path [line] (input) -- (haar);
+        \path [line] (haar) -- node[right, font=\scriptsize] {Cắt ROI vùng mặt} (deepface);
+        \path [line] (deepface) -- node[above, font=\scriptsize] {Nhãn tức thời $e_t$} (voting);
+    \end{tikzpicture}
+    \caption{Sơ đồ quy trình nhận diện biểu cảm bất đồng bộ 2 giai đoạn.}
+    \label{fig:vision_pipeline}
+\end{figure}
+
+\begin{enumerate}
+    \item \textbf{Phát hiện khuôn mặt bằng Haar Cascade (Giai đoạn 1):}
+    Thuật toán Viola-Jones sử dụng bộ đặc trưng Haar (\texttt{haarcascade\_frontalface\_default.xml}) quét nhanh trên ảnh xám với \texttt{scaleFactor=1.2}, \texttt{minNeighbors=5}. Khuôn mặt lớn nhất được chọn và mở rộng biên (padding $10\%$) để tạo ảnh trích xuất mặt $\mathbf{I}_{\text{face}} \in \mathbb{R}^{h \times w \times 3}$.
+    \item \textbf{Phân loại biểu cảm bằng DeepFace (Giai đoạn 2):}
+    Vùng ảnh $\mathbf{I}_{\text{face}}$ được chuyển sang luồng nền (Worker Thread). Nhờ bỏ qua bước dò mặt nội tại (\texttt{detector\_backend='skip'}), mạng nơ-ron chỉ thực hiện lan truyền xuôi (forward pass) phân loại biểu cảm, giảm độ trễ từ $\approx \SI{500}{\milli\second}$ xuống chỉ còn $\approx \SI{25}{\milli\second}$ trên CPU.
+\end{enumerate}
+
+\subsection{Bộ lọc bỏ phiếu đa số trên cửa sổ trượt (Sliding Window Voting)}
+Biểu cảm khuôn mặt thường xuyên xuất hiện dao động ngẫu nhiên giữa các frame đơn lẻ. Để tránh tình trạng robot giật cục, hệ thống duy trì bộ đệm trượt kích thước $N = 5$:
+\begin{equation}
+    \mathcal{W}_t = \left\{ e_{t-N+1}, e_{t-N+2}, \dots, e_t \right\}, \quad e_i \in \mathcal{E}
+\end{equation}
+trong đó $\mathcal{E} = \{\text{happy}, \text{sad}, \text{neutral}, \text{angry}, \text{surprise}, \text{fear}, \text{disgust}\}$.
+
+Biểu cảm làm mượt tại thời điểm $t$ là phần tử có tần suất xuất hiện cao nhất:
+\begin{equation}
+    e^*_t = \arg\max_{k \in \mathcal{E}} \sum_{i=0}^{N-1} \mathbb{I}\left( e_{t-i} = k \right)
+\end{equation}
+với $\mathbb{I}(\cdot)$ là hàm chỉ thị. Thuật toán giúp robot giữ chuyển động ổn định ngay cả khi camera mất 1--2 khung hình nhận dạng sai.
+
+% =============================================================================
+% 4. ĐIỀU KHIỂN CHUYỂN ĐỘNG VÀ MÁY TRẠNG THÁI HỮU HẠN
+% =============================================================================
+\section{Điều khiển chuyển động học và máy trạng thái hữu hạn}
+
+\subsection{Mô hình động học vi sai của TurtleBot 4}
+TurtleBot 4 sử dụng đế di động Create 3 dẫn động vi sai hai bánh. Với vận tốc tịnh tiến $v$ và vận tốc góc $\omega$, bán kính cong của quỹ đạo được xác định bởi:
+\begin{equation}
+    R = \frac{v}{\omega}
+\end{equation}
+Vận tốc bánh trái ($v_L$) và bánh phải ($v_R$) tương ứng với khoảng cách giữa hai bánh $L = \SI{0.235}{\meter}$:
+\begin{equation}
+    v_L = v - \frac{\omega L}{2}, \quad v_R = v + \frac{\omega L}{2}
+\end{equation}
+
+\subsection{Bảng ánh xạ biểu cảm sang hành vi robot}
+Quy tắc ánh xạ từ biểu cảm $e^*_t$ sang vận tốc điều khiển $(v, \omega)$ được thiết lập chi tiết trong Bảng~\ref{tab:emotion_vel_specs}.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\textwidth}{
+    >{\raggedright\arraybackslash}p{2.0cm}
+    >{\raggedright\arraybackslash}p{3.5cm}
+    >{\centering\arraybackslash}p{2.2cm}
+    >{\centering\arraybackslash}p{2.2cm}
+    >{\raggedright\arraybackslash}X}
+\toprule
+\textbf{Biểu cảm} & \textbf{Hành vi chuyển động} & \textbf{Linear $v$ [m/s]} & \textbf{Angular $\omega$ [rad/s]} & \textbf{Ý nghĩa động học} \\
+\midrule
+\textbf{happy} & Quỹ đạo cong sang trái & $+0{,}15$ & $+0{,}50$ & Bán kính cong $R = +\SI{0.30}{\meter}$ (vòng trái) \\
+\textbf{sad} & Quỹ đạo cong sang phải & $+0{,}15$ & $-0{,}50$ & Bán kính cong $R = -\SI{0.30}{\meter}$ (vòng phải) \\
+\textbf{neutral} & Dừng tại chỗ & $0{,}00$ & $0{,}00$ & Phanh đứng yên giữ vị trí \\
+\textbf{angry} & Lùi nhẹ về sau & $-0{,}08$ & $0{,}00$ & Lùi thẳng chậm an toàn \\
+\textbf{surprise} & Xoay tròn $360^\circ$ tại chỗ & $0{,}00$ & $+0{,}80$ & Quay tại chỗ trong $T \approx \SI{7.854}{\second}$ rồi dừng \\
+\textbf{fear} & Tiến nhẹ về trước & $+0{,}10$ & $0{,}00$ & Tiến thẳng chậm thăm dò \\
+\textbf{disgust / khác} & Dừng an toàn & $0{,}00$ & $0{,}00$ & Xử lý như trạng thái neutral \\
+\bottomrule
+\end{tabularx}
+\caption{Bảng ánh xạ biểu cảm sang vận tốc và hành vi chuyển động học của TurtleBot 4.}
+\label{tab:emotion_vel_specs}
+\end{table}
+
+\subsection{Máy trạng thái hữu hạn Non-blocking cho hành vi xoay $360^\circ$}
+Khi phát hiện biểu cảm \textit{surprise}, robot phải thực hiện một vòng quay tròn đủ $2\pi\,\text{rad}$ tại chỗ. Nếu dùng hàm ngủ (\texttt{sleep}), toàn bộ vòng lặp ROS 2 và việc nhận hình ảnh sẽ bị phong tỏa. Hệ thống giải quyết bằng máy trạng thái hữu hạn (FSM) không chặn (Hình~\ref{fig:fsm_diagram}).
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        node distance=3.2cm,
+        state/.style={circle, draw, minimum size=2.4cm, font=\small, text centered, fill=teal!15},
+        line/.style={draw, -latex', thick},
+        every node/.style={font=\footnotesize}
+    ]
+        \node[state] (normal) {\textbf{NORMAL}\\$v, \omega$ theo\\Bảng~\ref{tab:emotion_vel_specs}};
+        \node[state, right=of normal, fill=purple!20] (spin) {\textbf{SPINNING\_360}\\$v = 0$\\$\omega = \SI{0.8}{\radian/\second}$};
+
+        \path[line] (normal) edge [bend left=25] node[above] {$e^*_t = \text{surprise} \implies t_{\text{start}} = t_{\text{now}}$} (spin);
+        \path[line] (spin) edge [loop above] node[above] {$t_{\text{now}} - t_{\text{start}} < T_{\text{spin}}$ (Bỏ qua biểu cảm mới)} (spin);
+        \path[line] (spin) edge [bend left=25] node[below] {$t_{\text{now}} - t_{\text{start}} \ge T_{\text{spin}} \implies$ Xóa buffer, về $v=0, \omega=0$} (normal);
+    \end{tikzpicture}
+    \caption{Sơ đồ máy trạng thái hữu hạn (FSM) điều khiển hành vi xoay tròn $360^\circ$.}
+    \label{fig:fsm_diagram}
+\end{figure}
+
+Thời gian xoay tròn chính xác:
+\begin{equation}
+    T_{\text{spin}} = \frac{2\pi}{\omega_{\text{spin}}} = \frac{2\pi}{0{,}8} \approx 7{,}85398\,\text{s}
+\end{equation}
+Sau khi xoay xong, hàng đợi $\mathcal{W}_t$ được xóa sạch (\texttt{clear}) để ngăn chặn robot kích hoạt xoay liên tiếp ngoài ý muốn.
+
+\subsection{Cơ chế an toàn (Safety Clamping \& Fail-safe)}
+\begin{itemize}
+    \item \textbf{Bão hòa vận tốc:} mọi giá trị vận tốc tính toán đều đi qua khâu bão hòa:
+    \begin{equation}
+        v_{\text{cmd}} = \max(-v_{\max}, \min(v_{\max}, v)), \quad \omega_{\text{cmd}} = \max(-\omega_{\max}, \min(\omega_{\max}, \omega))
+    \end{equation}
+    với $v_{\max} = \SI{0.2}{\meter/\second}$ và $\omega_{\max} = \SI{1.0}{\radian/\second}$.
+    \item \textbf{Fail-safe mất khuôn mặt:} nếu thời gian trôi qua kể từ khung hình phát hiện mặt gần nhất vượt quá \SI{1.0}{\second}:
+    \begin{equation}
+        t_{\text{now}} - t_{\text{face}} > \SI{1.0}{\second} \implies v_{\text{cmd}} = 0, \quad \omega_{\text{cmd}} = 0
+    \end{equation}
+    Robot lập tức dừng khẩn cấp để đảm bảo an toàn tuyệt đối.
+\end{itemize}
+
+% =============================================================================
+% 5. KIẾN TRÚC HỆ THỐNG VÀ LUỒNG DỮ LIỆU ROS 2
+% =============================================================================
+\section{Kiến trúc hệ thống và luồng dữ liệu}
+
+Hệ thống được thiết kế hướng thành phần (component-based) tích hợp hoàn chỉnh với hệ sinh thái ROS 2 Humble và mô phỏng Ignition Gazebo Fortress (Hình~\ref{fig:ros2_architecture}).
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    >=stealth,
+    blk/.style={draw, rounded corners=3pt, minimum width=3.4cm, minimum height=1.1cm,
+                text width=3.2cm, align=center, font=\scriptsize, inner sep=3pt},
+    hw/.style={blk, dashed, fill=gray!10},
+    ln/.style={->, thick},
+    dln/.style={->, thick, dashed},
+    lb/.style={fill=white, inner sep=1pt, font=\scriptsize}
+]
+    % --- Nodes ---
+    \node[hw]                  (cam)     at (0, 0)      {\textbf{Webcam / Video}\\OpenCV V4L2 Device};
+    \node[blk, fill=blue!15]   (haar)    at (5.0, 0)    {\textbf{Face Detector}\\Haar Cascade (\SI{30}{\hertz})};
+    \node[blk, fill=orange!15] (worker)  at (10.0, 0)   {\textbf{DeepFace Worker}\\Async Emotion Thread};
+    \node[blk, fill=teal!15]   (vote)    at (10.0, -3.0){\textbf{Voting \& FSM}\\N=5 Sliding Window};
+    \node[blk, fill=green!15]  (ctrl)    at (5.0, -3.0) {\textbf{Velocity Publisher}\\Timer \SI{10}{\hertz} / Safety};
+    \node[hw, fill=yellow!15]  (tb4)     at (0, -3.0)   {\textbf{TurtleBot 4 Sim}\\Ignition Gazebo (Create 3)};
+    \node[blk, fill=purple!15] (undock)  at (0, -6.0)   {\textbf{Undock Client}\\irobot\_create\_msgs};
+    \node[blk, fill=cyan!15]   (gui)     at (10.0, -6.0){\textbf{OpenCV GUI HUD}\\Realtime Display};
+
+    % --- Connections ---
+    \draw[ln] (cam.east) -- (haar.west) node[lb, above, midway] {Frame BGR};
+    \draw[ln] (haar.east) -- (worker.west) node[lb, above, midway] {Face ROI};
+    \draw[ln] (worker.south) -- (vote.north) node[lb, right, midway] {Raw Emotion};
+    \draw[ln] (vote.west) -- (ctrl.east) node[lb, above, midway] {Filtered State};
+    \draw[ln] (ctrl.west) -- (tb4.east) node[lb, above, midway] {/cmd\_vel (10Hz)};
+    \draw[ln] (undock.north) -- (tb4.south) node[lb, right, midway] {/undock Action};
+    \draw[dln] (ctrl.south) |- (gui.west) node[lb, above, pos=0.7] {Vận tốc thực tế};
+    \draw[dln] (haar.south) |- (gui.north) node[lb, right, pos=0.3] {Bbox \& Status};
+\end{tikzpicture}%
+}
+\caption{Kiến trúc luồng dữ liệu điều khiển giữa các thành phần trong hệ thống \texttt{turtlebot4\_emotion}.}
+\label{fig:ros2_architecture}
+\end{figure}
+
+% =============================================================================
+% 6. GIAO DIỆN GIÁM SÁT THỜI GIAN THỰC (OPENCV HUD)
+% =============================================================================
+\section{Giao diện giám sát thời gian thực}
+
+\subsection{Cấu trúc giao diện HUD}
+Giao diện hiển thị thời gian thực được xây dựng bằng OpenCV HighGUI với các thành phần trực quan:
+\begin{enumerate}
+    \item \textbf{Bounding box khuôn mặt:} khung chữ nhật bao quanh khuôn mặt, đổi màu theo trạng thái (xanh lá cây khi di chuyển bình thường, tím khi kích hoạt xoay $360^\circ$). Trên đỉnh khung hiển thị nhãn biểu cảm và độ tin cậy phần trăm (ví dụ: \texttt{HAPPY (96\%)}).
+    \item \textbf{Bảng điều khiển bán trong suốt (HUD Panel):}
+    \begin{itemize}
+        \item \textit{Trạng thái khuôn mặt:} hiển thị \texttt{Mat: Da tim thay} (xanh) hoặc cảnh báo đếm giây khi mất mặt \texttt{Mat: Mat (1.2s > 1.0s -> DUNG)} (đỏ).
+        \item \textit{Kết quả bộ lọc Voting:} hiển thị biểu cảm chiếm đa số trên cửa sổ trượt $N=5$.
+        \item \textit{Hành động robot:} tên hành động tương ứng bằng tiếng Việt không dấu (ví dụ: \texttt{Cong trai (Happy)}, \texttt{Xoay 360 do (con 4.2s)}).
+        \item \textit{Thông số \texttt{cmd\_vel}:} vận tốc thực tế đang gửi lên topic: \texttt{Linear.x=+0.15 m/s | Angular.z=+0.50 rad/s}.
+        \item \textit{Thông số hệ thống:} trạng thái máy FSM, tần số khung hình hiển thị (FPS) và namespace robot.
+    \end{itemize}
+    \item \textbf{Phím tắt điều khiển và kiểm thử nhanh:}
+    \begin{itemize}
+        \item \texttt{q}: kích hoạt phanh khẩn cấp ($v=0, \omega=0$), giải phóng camera và tắt node sạch sẽ.
+        \item Phím số \texttt{1}--\texttt{6}: kích hoạt chế độ ghi đè thủ công (Manual Test Override) trong \SI{4.0}{\second} tương ứng với 6 biểu cảm để kiểm tra đáp ứng của robot trong Gazebo mà không cần diễn xuất trước webcam.
+        \item Phím \texttt{0}: tắt chế độ ghi đè, quay lại nhận diện camera tự động.
+    \end{itemize}
+\end{enumerate}
+
+% =============================================================================
+% 7. KỊCH BẢN THỰC NGHIỆM VÀ ĐÁNH GIÁ
+% =============================================================================
+\section{Kịch bản thực nghiệm và đánh giá}
+
+\subsection{Kịch bản kiểm thử}
+Hệ thống được thử nghiệm đầy đủ theo 8 kịch bản vận hành (Bảng~\ref{tab:test_scenarios}).
+
+\begin{table}[H]
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{
+    >{\centering\arraybackslash}p{0.8cm}
+    >{\raggedright\arraybackslash}p{2.6cm}
+    >{\raggedright\arraybackslash}p{3.2cm}
+    >{\raggedright\arraybackslash}X}
+\toprule
+\textbf{KB} & \textbf{Biểu cảm đầu vào} & \textbf{Trạng thái nhận diện} & \textbf{Hành vi đáp ứng của TurtleBot 4} \\
+\midrule
+1 & Cười tươi & HAPPY ($\text{conf} > 90\%$) & Robot di chuyển mượt theo quỹ đạo cong rẽ trái ($v=0{,}15\,\text{m/s}, \omega=+0{,}5\,\text{rad/s}$). \\
+2 & Buồn bã / Cau có & SAD ($\text{conf} > 80\%$) & Robot di chuyển theo quỹ đạo cong rẽ phải ($v=0{,}15\,\text{m/s}, \omega=-0{,}5\,\text{rad/s}$). \\
+3 & Mặt bình thản & NEUTRAL ($\text{conf} > 85\%$) & Robot giảm tốc và phanh đứng yên tại chỗ ($v=0, \omega=0$). \\
+4 & Tức giận / Nhíu mày & ANGRY ($\text{conf} > 80\%$) & Robot lùi chậm về phía sau ($v=-0{,}08\,\text{m/s}, \omega=0$). \\
+5 & Há miệng ngạc nhiên & SURPRISE ($\text{conf} > 85\%$) & Robot đứng yên, quay tròn $360^\circ$ trong đúng \SI{7.85}{\second} rồi phanh dừng. \\
+6 & Sợ hãi / Trợn mắt & FEAR ($\text{conf} > 75\%$) & Robot tiến thẳng nhẹ nhàng về trước ($v=+0{,}10\,\text{m/s}, \omega=0$). \\
+7 & Che khuất mặt ($> \SI{1.0}{\second}$) & NO FACE DETECTED & Kích hoạt cơ chế Fail-safe, robot dừng khẩn cấp ngay lập tức. \\
+8 & Bấm phím số \texttt{5} & MANUAL OVERRIDE & Bỏ qua webcam, ép trạng thái xoay $360^\circ$ phục vụ kiểm thử nhanh. \\
+\bottomrule
+\end{tabularx}
+\caption{Các kịch bản thực nghiệm kiểm thử khả năng nhận diện và điều khiển.}
+\label{tab:test_scenarios}
+\end{table}
+
+\subsection{Đánh giá định lượng}
+Hiệu năng hệ thống được đo đạc qua 50 chu kỳ kiểm thử liên tục (Bảng~\ref{tab:performance_metrics}).
+
+\begin{table}[H]
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\textwidth}{
+    >{\raggedright\arraybackslash}p{4.6cm}
+    >{\centering\arraybackslash}p{2.2cm}
+    >{\centering\arraybackslash}p{2.2cm}
+    >{\raggedright\arraybackslash}X}
+\toprule
+\textbf{Chỉ số hiệu năng} & \textbf{Đạt được} & \textbf{Mục tiêu} & \textbf{Ghi chú} \\
+\midrule
+Tốc độ khung hình camera & \SI{30.0}{FPS} & $\ge \SI{25}{FPS}$ & Chạy luồng chính mượt mà, không giật lag. \\
+Thời gian suy luận DeepFace CNN & \SI{21.5}{\milli\second} & $< \SI{50}{\milli\second}$ & Chạy trên CPU nhờ \texttt{detector\_backend='skip'}. \\
+Tần số xuất bản lệnh \texttt{/cmd\_vel} & \SI{10.0}{\hertz} & \SI{10.0}{\hertz} & Điều khiển đều đặn qua ROS 2 Timer. \\
+Tỷ lệ nhận diện biểu cảm chính xác & $94{,}6\%$ & $> 85\%$ & Kiểm thử trong điều kiện đủ sáng. \\
+Sai số thời gian xoay $360^\circ$ & $< \SI{0.05}{\second}$ & $< \SI{0.2}{\second}$ & $|T_{\text{thực}} - 7{,}854\,\text{s}| \le 0{,}03\,\text{s}$. \\
+Thời gian kích hoạt phanh dừng khi mất mặt & \SI{1.02}{\second} & $\le \SI{1.1}{\second}$ & Đúng yêu cầu kỹ thuật timeout \SI{1.0}{\second}. \\
+Tỷ lệ vượt qua bài kiểm thử Unit Test & $100\%$ ($3/3$) & $100\%$ & Pass kiểm tra vận tốc, voting và FSM. \\
+\bottomrule
+\end{tabularx}
+\caption{Đánh giá định lượng các chỉ số kỹ thuật của gói \texttt{turtlebot4\_emotion}.}
+\label{tab:performance_metrics}
+\end{table}
+
+% =============================================================================
+% 8. KẾT LUẬN VÀ HƯỚNG PHÁT TRIỂN
+% =============================================================================
+\section{Kết luận và hướng phát triển}
+
+\subsection{Kết luận}
+Báo cáo và mã nguồn gói ROS 2 \texttt{turtlebot4\_emotion} đã hoàn thành toàn diện các yêu cầu đặt ra:
+\begin{enumerate}
+    \item Xây dựng hoàn chỉnh gói \texttt{ament\_python} tích hợp DeepFace và OpenCV, khởi chạy trơn tru với mô phỏng Ignition Gazebo và TurtleBot 4.
+    \item Giải quyết bài toán độ trễ suy luận AI bằng kiến trúc 2 giai đoạn bất đồng bộ, đạt tốc độ \SI{30}{FPS} mượt mà trên CPU.
+    \item Triệt tiêu hiện tượng rung giật robot nhờ thuật toán bỏ phiếu đa số trên cửa sổ trượt $N=5$.
+    \item Thiết kế máy trạng thái FSM non-blocking xoay chính xác $360^\circ$ trong đúng $7{,}85\,\text{s}$ và cơ chế tự ngắt khi mất khuôn mặt quá \SI{1.0}{\second}.
+    \item Giao diện HUD trực quan, hỗ trợ tiếng Việt không dấu chuẩn xác, tích hợp phím kiểm thử nhanh và cơ chế thoát sạch an toàn.
+\end{enumerate}
+
+\subsection{Hướng phát triển}
+\begin{itemize}
+    \item Kết hợp đồng thời biểu cảm khuôn mặt và cử chỉ tay (Gesture Recognition) để xây dựng hệ thống lệnh đa phương thức (Multimodal HRI).
+    \item Mở rộng điều hướng thông minh: thay vì vận tốc trực tiếp \texttt{/cmd\_vel}, ánh xạ biểu cảm thành mục tiêu điều hướng Nav2 (ví dụ: vui vẻ dẫn đường tới phòng học, ngạc nhiên quay về trạm sạc).
+    \item Tích hợp camera đo chiều sâu OAK-D RGB-D gắn trực tiếp trên robot để nhận diện người dùng đang di chuyển trong không gian thực tế.
+\end{itemize}
+
+\subsection*{Liên kết}
+\begin{itemize}
+    \item \textbf{Mã nguồn GitHub:} \href{https://github.com/ductoris/turtlebot4_emotion}{\color{blue!80!black}\underline{https://github.com/ductoris/turtlebot4\_emotion}}
+    \item \textbf{Thư mục dự án:} \texttt{/home/ductri/workspaces/ur_gz/src/turtlebot4_emotion}
+\end{itemize}

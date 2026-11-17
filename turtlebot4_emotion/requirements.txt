@@ -1,0 +1,9 @@
+# Thư viện thị giác máy tính và nhận diện khuôn mặt / biểu cảm
+opencv-python>=4.6.0
+deepface>=0.0.79
+fer>=22.5.1
+
+# Deep Learning backend (TensorFlow / Keras)
+tensorflow>=2.12.0
+tf-keras>=2.16.0
+numpy>=1.23.5,<2.0.0
